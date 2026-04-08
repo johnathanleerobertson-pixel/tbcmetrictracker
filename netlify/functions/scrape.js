@@ -328,15 +328,19 @@ exports.handler = async (event) => {
       ttResult.posts = retagPosts(ttResult.posts);
       ttHostsResult.posts = retagPosts(ttHostsResult.posts);
 
+      // Load existing data first for follower persistence
+      var existing = await loadStored(apifyToken);
+      var prevFollowers = (existing && existing.accountFollowers) || {};
+
+      // Preserve last known follower counts when scrapers return 0 (timeout)
       var currentFollowers = {
-        youtube: ytResult.subscribers,
-        instagram: igResult.followers,
-        tiktok: ttResult.followers,
-        instagram_hosts: igHostsResult.followers,
-        tiktok_hosts: ttHostsResult.followers
+        youtube: ytResult.subscribers || prevFollowers.youtube || 0,
+        instagram: igResult.followers || prevFollowers.instagram || 0,
+        tiktok: ttResult.followers || prevFollowers.tiktok || 0,
+        instagram_hosts: igHostsResult.followers || prevFollowers.instagram_hosts || 0,
+        tiktok_hosts: ttHostsResult.followers || prevFollowers.tiktok_hosts || 0
       };
 
-      var existing = await loadStored(apifyToken);
       var followerHistory = (existing && existing.followerHistory) || [];
       var hasSeed = followerHistory.some(function(h) { return h.date === "2026-03-23"; });
       if (!hasSeed) followerHistory = SEED_HISTORY.concat(followerHistory);

@@ -161,12 +161,12 @@ async function scrapeYouTube(ytKey) {
       }
     }
 
-    // Get ALL comments from ALL videos with pagination
+    // Comments: 5 videos max, 2 pages each to stay within time budget
     var allComments = [];
-    for (var i = 0; i < videoDetails.length; i++) {
+    for (var i = 0; i < Math.min(videoDetails.length, 5); i++) {
       try {
         var nextPageToken = "";
-        for (var cp = 0; cp < 10; cp++) {
+        for (var cp = 0; cp < 2; cp++) {
           var commUrl = "https://www.googleapis.com/youtube/v3/commentThreads?part=snippet&videoId=" + videoDetails[i].id + "&maxResults=100&order=time&key=" + ytKey;
           if (nextPageToken) commUrl += "&pageToken=" + nextPageToken;
           var cr = await timeoutFetch(commUrl, {}, 5000);
@@ -175,7 +175,6 @@ async function scrapeYouTube(ytKey) {
           var threads = cd.items || [];
           for (var j = 0; j < threads.length; j++) {
             var c = threads[j].snippet.topLevelComment.snippet;
-            var postDate = videoDetails[i].snippet.publishedAt.split("T")[0];
             allComments.push({ id: threads[j].id, text: c.textDisplay, author: c.authorDisplayName, date: c.publishedAt.split("T")[0], postTitle: videoDetails[i].snippet.title, platform: "youtube", sentiment: "neutral", score: 0.5 });
           }
           nextPageToken = cd.nextPageToken;
@@ -302,20 +301,34 @@ exports.handler = async (event) => {
     var ytKey = process.env.YOUTUBE_API_KEY;
     var anthropicKey = process.env.ANTHROPIC_API_KEY;
     try {
-      var ytResult = await scrapeYouTube(ytKey);
-      var episodes = ytResult.episodes || [];
-
-      var settled = await Promise.allSettled([
-        scrapeInstagramFast(apifyToken, IG_ACCOUNT, "instagram", episodes),
-        scrapeInstagramFast(apifyToken, IG_HOSTS_ACCOUNT, "instagram_hosts", episodes),
-        scrapeTikTok(apifyToken, TIKTOK_ACCOUNT, "tiktok", episodes),
-        scrapeTikTok(apifyToken, TIKTOK_HOSTS_ACCOUNT, "tiktok_hosts", episodes)
+      // Run YouTube and Apify scrapers in parallel
+      var allSettled = await Promise.allSettled([
+        scrapeYouTube(ytKey),
+        scrapeInstagramFast(apifyToken, IG_ACCOUNT, "instagram", []),
+        scrapeInstagramFast(apifyToken, IG_HOSTS_ACCOUNT, "instagram_hosts", []),
+        scrapeTikTok(apifyToken, TIKTOK_ACCOUNT, "tiktok", []),
+        scrapeTikTok(apifyToken, TIKTOK_HOSTS_ACCOUNT, "tiktok_hosts", [])
       ]);
 
-      var igResult = settled[0].status === "fulfilled" ? settled[0].value : { posts: [], followers: 0 };
-      var igHostsResult = settled[1].status === "fulfilled" ? settled[1].value : { posts: [], followers: 0 };
-      var ttResult = settled[2].status === "fulfilled" ? settled[2].value : { posts: [], followers: 0 };
-      var ttHostsResult = settled[3].status === "fulfilled" ? settled[3].value : { posts: [], followers: 0 };
+      var ytResult = allSettled[0].status === "fulfilled" ? allSettled[0].value : { posts: [], comments: [], subscribers: 0, episodes: [] };
+      var igResult = allSettled[1].status === "fulfilled" ? allSettled[1].value : { posts: [], followers: 0 };
+      var igHostsResult = allSettled[2].status === "fulfilled" ? allSettled[2].value : { posts: [], followers: 0 };
+      var ttResult = allSettled[3].status === "fulfilled" ? allSettled[3].value : { posts: [], followers: 0 };
+      var ttHostsResult = allSettled[4].status === "fulfilled" ? allSettled[4].value : { posts: [], followers: 0 };
+
+      var episodes = ytResult.episodes || [];
+
+      // Re-tag Apify posts with correct episodes now that we have episode data
+      function retagPosts(posts) {
+        return posts.map(function(p) {
+          p.episode = detectEpisode(p.title, p.date, episodes);
+          return p;
+        });
+      }
+      igResult.posts = retagPosts(igResult.posts);
+      igHostsResult.posts = retagPosts(igHostsResult.posts);
+      ttResult.posts = retagPosts(ttResult.posts);
+      ttHostsResult.posts = retagPosts(ttHostsResult.posts);
 
       var currentFollowers = {
         youtube: ytResult.subscribers,
@@ -339,7 +352,7 @@ exports.handler = async (event) => {
         followerHistory.sort(function(a, b) { return a.date.localeCompare(b.date); });
       }
 
-      // Run sentiment analysis on comments
+      // Sentiment analysis
       var allComments = ytResult.comments || [];
       allComments = await analyzeSentiment(allComments, anthropicKey);
 

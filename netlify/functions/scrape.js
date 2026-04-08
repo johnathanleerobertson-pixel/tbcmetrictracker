@@ -1,4 +1,4 @@
-const fetch = require("node-fetch");
+javascriptconst fetch = require("node-fetch");
 
 var YOUTUBE_CHANNEL_HANDLE = "twobecontinuedhq";
 var IG_ACCOUNT = "twobecontinuedhq";
@@ -161,12 +161,12 @@ async function scrapeYouTube(ytKey) {
       }
     }
 
-    // Comments: 5 videos max, 2 pages each to stay within time budget
+    // Get ALL comments from ALL videos with pagination
     var allComments = [];
-    for (var i = 0; i < Math.min(videoDetails.length, 5); i++) {
+    for (var i = 0; i < videoDetails.length; i++) {
       try {
         var nextPageToken = "";
-        for (var cp = 0; cp < 2; cp++) {
+        for (var cp = 0; cp < 10; cp++) {
           var commUrl = "https://www.googleapis.com/youtube/v3/commentThreads?part=snippet&videoId=" + videoDetails[i].id + "&maxResults=100&order=time&key=" + ytKey;
           if (nextPageToken) commUrl += "&pageToken=" + nextPageToken;
           var cr = await timeoutFetch(commUrl, {}, 5000);
@@ -318,7 +318,7 @@ exports.handler = async (event) => {
 
       var episodes = ytResult.episodes || [];
 
-      // Re-tag Apify posts with correct episodes now that we have episode data
+      // Re-tag Apify posts with correct episodes
       function retagPosts(posts) {
         return posts.map(function(p) {
           p.episode = detectEpisode(p.title, p.date, episodes);

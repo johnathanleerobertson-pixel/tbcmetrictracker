@@ -31,11 +31,11 @@ exports.handler = async (event) => {
         },
         body: JSON.stringify({
           model: "claude-sonnet-4-20250514",
-          max_tokens: 16000,
+          max_tokens: 8000,
           tools: [{ type: "web_search_20250305", name: "web_search" }],
           messages: [{
             role: "user",
-            content: "I need you to find social media engagement data for a brand new podcast called \"Two Be Continued\" hosted by twin sisters Delaney and Hadley Robertson (they are Emmy-winning PBS hosts of \"Twice As Good\"). The podcast is a duo-on-duo format. Episode 1 features Stringys co-founders Olivia Karina and Elvira Novek Troger.\n\nPlease search for ALL of these specific things:\n\n1. Search: \"two be continued\" podcast Delaney Hadley\n2. Search: \"twobecontinuedhq\" \n3. Search: twobecontinuedhq.com\n4. Search: \"Delaney and Hadley Robertson\" podcast 2026\n5. Search: \"Twice As Good\" PBS twins podcast\n6. Search: site:youtube.com twobecontinuedhq\n7. Search: site:instagram.com twobecontinuedhq\n8. Search: site:tiktok.com twobecontinuedhq\n9. Search: itsdelaneyandhadley instagram\n10. Search: \"two be continued\" podcast stringys\n\nFor ANY content you find, extract: post titles, like counts, comment counts, view counts, follower counts, dates posted.\n\nReturn ONLY valid JSON (no markdown fences, no explanation before or after the JSON):\n{\"posts\":[{\"title\":\"...\",\"platform\":\"youtube|instagram|tiktok|instagram_hosts\",\"episode\":\"Episode 1|Trailer|Promo\",\"date\":\"YYYY-MM-DD\",\"likes\":0,\"commentCount\":0,\"views\":0,\"followerGain\":0}],\"comments\":[{\"text\":\"...\",\"postTitle\":\"...\",\"author\":\"...\",\"date\":\"YYYY-MM-DD\"}],\"accountFollowers\":{\"instagram\":0,\"youtube\":0,\"tiktok\":0,\"instagram_hosts\":0}}"
+            content: "Search the web for: \"two be continued\" podcast Delaney Hadley Robertson 2026\n\nThen search for: twobecontinuedhq.com\n\nThen search for: itsdelaneyandhadley instagram\n\nThese are real, public, recently created social media accounts for a new podcast by twin sisters Delaney and Hadley Robertson. Episode 1 features Stringys co-founders Olivia Karina and Elvira Novek Troger.\n\nReport any social media posts, videos, follower counts, likes, views, and comments you find for their YouTube, Instagram, TikTok, and the hosts personal Instagram.\n\nReturn ONLY valid JSON (no markdown, no explanation before or after):\n{\"posts\":[{\"title\":\"...\",\"platform\":\"youtube|instagram|tiktok|instagram_hosts\",\"episode\":\"Episode 1|Trailer|Promo\",\"date\":\"YYYY-MM-DD\",\"likes\":0,\"commentCount\":0,\"views\":0,\"followerGain\":0}],\"comments\":[],\"accountFollowers\":{\"instagram\":0,\"youtube\":0,\"tiktok\":0,\"instagram_hosts\":0}}"
           }]
         })
       });
@@ -50,7 +50,7 @@ exports.handler = async (event) => {
       const texts = allContent.filter(b => b.type === "text").map(b => b.text).join("\n");
 
       if (!texts || texts.trim().length === 0) {
-        return { statusCode: 200, headers, body: JSON.stringify({ error: "No text response", contentTypes: allContent.map(b => b.type) }) };
+        return { statusCode: 200, headers, body: JSON.stringify({ error: "No text response" }) };
       }
 
       const jsonMatch = texts.match(/\{[\s\S]*"posts"[\s\S]*\}/);

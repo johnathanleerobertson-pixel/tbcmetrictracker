@@ -127,9 +127,7 @@ async function scrapeYouTube(ytKey) {
         var plRes = await timeoutFetch(plUrl, {}, 8000);
         var plData = await plRes.json();
         var plItems = plData.items || [];
-        for (var pi = 0; pi < plItems.length; pi++) {
-          allVideoIds.push(plItems[pi].contentDetails.videoId);
-        }
+        for (var pi = 0; pi < plItems.length; pi++) allVideoIds.push(plItems[pi].contentDetails.videoId);
         nextPage = plData.nextPageToken;
         if (!nextPage) break;
       }
@@ -158,26 +156,26 @@ async function scrapeYouTube(ytKey) {
       if (minutes >= 20) {
         episodeNum++;
         var guestName = extractGuestNames(sorted[v].snippet.title) || ("Episode " + episodeNum);
-        var words = sorted[v].snippet.title.toLowerCase().replace(/[^a-z0-9\s]/g, "").split(/\s+/).filter(function(w) {
-          return w.length > 3 && !SKIP_WORDS.includes(w);
-        });
+        var words = sorted[v].snippet.title.toLowerCase().replace(/[^a-z0-9\s]/g, "").split(/\s+/).filter(function(w) { return w.length > 3 && !SKIP_WORDS.includes(w); });
         episodes.push({ name: guestName, num: episodeNum, keywords: words, title: sorted[v].snippet.title, date: sorted[v].snippet.publishedAt.split("T")[0] });
       }
     }
 
-    // Get comments from ALL videos, up to 100 per video
+    // Get ALL comments from ALL videos with pagination
     var allComments = [];
     for (var i = 0; i < videoDetails.length; i++) {
       try {
         var nextPageToken = "";
-        for (var cp = 0; cp < 5; cp++) {
-          var commUrl = "https://www.googleapis.com/youtube/v3/commentThreads?part=snippet&videoId=" + videoDetails[i].id + "&maxResults=100&order=relevance&key=" + ytKey;
+        for (var cp = 0; cp < 10; cp++) {
+          var commUrl = "https://www.googleapis.com/youtube/v3/commentThreads?part=snippet&videoId=" + videoDetails[i].id + "&maxResults=100&order=time&key=" + ytKey;
           if (nextPageToken) commUrl += "&pageToken=" + nextPageToken;
           var cr = await timeoutFetch(commUrl, {}, 5000);
           var cd = await cr.json();
+          if (cd.error) break;
           var threads = cd.items || [];
           for (var j = 0; j < threads.length; j++) {
             var c = threads[j].snippet.topLevelComment.snippet;
+            var postDate = videoDetails[i].snippet.publishedAt.split("T")[0];
             allComments.push({ id: threads[j].id, text: c.textDisplay, author: c.authorDisplayName, date: c.publishedAt.split("T")[0], postTitle: videoDetails[i].snippet.title, platform: "youtube", sentiment: "neutral", score: 0.5 });
           }
           nextPageToken = cd.nextPageToken;
@@ -210,8 +208,7 @@ async function scrapeInstagramFast(token, username, platformLabel, episodes) {
   if (!token) return { posts: [], followers: 0 };
   try {
     var res = await timeoutFetch("https://api.apify.com/v2/acts/apify~instagram-profile-scraper/run-sync-get-dataset-items?token=" + token + "&timeout=10", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
+      method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ usernames: [username] })
     }, 12000);
     if (!res.ok) return { posts: [], followers: 0 };
@@ -229,15 +226,9 @@ async function scrapeInstagramFast(token, username, platformLabel, episodes) {
       var ep = detectEpisode(title, postDate, episodes);
       posts.push({
         id: "ig_" + (p.shortCode || Date.now().toString(36) + Math.random().toString(36).slice(2, 5)),
-        title: title.substring(0, 120),
-        platform: platformLabel,
-        episode: ep,
-        date: postDate,
-        likes: p.likesCount || 0,
-        commentCount: p.commentsCount || 0,
-        views: p.videoViewCount || 0,
-        followerGain: 0,
-        url: p.url || "https://www.instagram.com/p/" + (p.shortCode || "")
+        title: title.substring(0, 120), platform: platformLabel, episode: ep, date: postDate,
+        likes: p.likesCount || 0, commentCount: p.commentsCount || 0, views: p.videoViewCount || 0,
+        followerGain: 0, url: p.url || "https://www.instagram.com/p/" + (p.shortCode || "")
       });
     }
     return { posts: posts, followers: followers };
@@ -248,8 +239,7 @@ async function scrapeTikTok(token, username, platformKey, episodes) {
   if (!token) return { posts: [], followers: 0 };
   try {
     var res = await timeoutFetch("https://api.apify.com/v2/acts/clockworks~tiktok-scraper/run-sync-get-dataset-items?token=" + token + "&timeout=10", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
+      method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ profiles: ["https://www.tiktok.com/@" + username], resultsPerPage: 20, shouldDownloadVideos: false })
     }, 12000);
     if (!res.ok) return { posts: [], followers: 0 };
@@ -259,13 +249,8 @@ async function scrapeTikTok(token, username, platformKey, episodes) {
     var posts = [];
     for (var i = 0; i < items.length; i++) {
       var item = items[i];
-      // Check multiple possible follower fields
-      if (item.authorMeta) {
-        followers = item.authorMeta.fans || item.authorMeta.followers || item.authorMeta.followerCount || followers;
-      }
-      if (item.author && !followers) {
-        followers = item.author.fans || item.author.followers || item.author.followerCount || followers;
-      }
+      if (item.authorMeta) followers = item.authorMeta.fans || item.authorMeta.followers || item.authorMeta.followerCount || followers;
+      if (item.author && !followers) followers = item.author.fans || item.author.followers || item.author.followerCount || followers;
       var caption = (item.text || item.desc || "").substring(0, 200);
       var title = caption || ("TikTok " + (i + 1));
       var postDate = item.createTimeISO ? item.createTimeISO.split("T")[0] : new Date().toISOString().split("T")[0];
@@ -274,6 +259,32 @@ async function scrapeTikTok(token, username, platformKey, episodes) {
     }
     return { posts: posts, followers: followers };
   } catch (e) { return { posts: [], followers: 0 }; }
+}
+
+async function analyzeSentiment(comments, apiKey) {
+  if (!apiKey || !comments.length) return comments;
+  try {
+    var batch = comments.slice(0, 100).map(function(c, i) { return { index: i, text: (c.text || "").substring(0, 200) }; });
+    var sentRes = await timeoutFetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-20250514", max_tokens: 4000,
+        messages: [{ role: "user", content: "Analyze sentiment of these comments. Return ONLY a JSON array of {index, sentiment, score}. sentiment must be: positive, neutral, or negative. score: 0.0-1.0 confidence.\n\n" + JSON.stringify(batch) }]
+      })
+    }, 15000);
+    var sentData = await sentRes.json();
+    var sentText = (sentData.content || []).map(function(i) { return i.text || ""; }).join("");
+    var sentResults = JSON.parse(sentText.replace(/```json|```/g, "").trim());
+    for (var k = 0; k < sentResults.length; k++) {
+      var idx = sentResults[k].index;
+      if (comments[idx]) {
+        comments[idx].sentiment = sentResults[k].sentiment;
+        comments[idx].score = sentResults[k].score;
+      }
+    }
+  } catch (e) {}
+  return comments;
 }
 
 exports.handler = async (event) => {
@@ -289,6 +300,7 @@ exports.handler = async (event) => {
 
   if (event.httpMethod === "POST") {
     var ytKey = process.env.YOUTUBE_API_KEY;
+    var anthropicKey = process.env.ANTHROPIC_API_KEY;
     try {
       var ytResult = await scrapeYouTube(ytKey);
       var episodes = ytResult.episodes || [];
@@ -315,38 +327,31 @@ exports.handler = async (event) => {
 
       var existing = await loadStored(apifyToken);
       var followerHistory = (existing && existing.followerHistory) || [];
-
       var hasSeed = followerHistory.some(function(h) { return h.date === "2026-03-23"; });
-      if (!hasSeed) {
-        followerHistory = SEED_HISTORY.concat(followerHistory);
-      }
-      // Remove old April 1 seed if present
-      followerHistory = followerHistory.filter(function(h) { return h.date !== "2026-04-01" || h.youtube !== 3; });
+      if (!hasSeed) followerHistory = SEED_HISTORY.concat(followerHistory);
+      followerHistory = followerHistory.filter(function(h) { return !(h.date === "2026-04-01" && h.youtube === 3); });
 
       var today = new Date().toISOString().split("T")[0];
       var hasData = currentFollowers.youtube > 0 || currentFollowers.instagram > 0 || currentFollowers.tiktok > 0;
       if (hasData) {
         followerHistory = followerHistory.filter(function(h) { return h.date !== today; });
-        followerHistory.push({
-          date: today,
-          youtube: currentFollowers.youtube,
-          instagram: currentFollowers.instagram,
-          tiktok: currentFollowers.tiktok,
-          instagram_hosts: currentFollowers.instagram_hosts,
-          tiktok_hosts: currentFollowers.tiktok_hosts
-        });
+        followerHistory.push({ date: today, youtube: currentFollowers.youtube, instagram: currentFollowers.instagram, tiktok: currentFollowers.tiktok, instagram_hosts: currentFollowers.instagram_hosts, tiktok_hosts: currentFollowers.tiktok_hosts });
         followerHistory.sort(function(a, b) { return a.date.localeCompare(b.date); });
       }
 
+      // Run sentiment analysis on comments
+      var allComments = ytResult.comments || [];
+      allComments = await analyzeSentiment(allComments, anthropicKey);
+
       var result = {
         posts: [].concat(ytResult.posts, igResult.posts, igHostsResult.posts, ttResult.posts, ttHostsResult.posts),
-        comments: ytResult.comments || [],
+        comments: allComments,
         accountFollowers: currentFollowers,
         followerHistory: followerHistory,
         lastUpdated: new Date().toISOString(),
         lastScraped: new Date().toISOString(),
         episodes: episodes.map(function(e) { return { name: e.name, title: e.title, date: e.date, num: e.num }; }),
-        debug: { yt: ytResult.posts.length, ig: igResult.posts.length, igH: igHostsResult.posts.length, tt: ttResult.posts.length, ttH: ttHostsResult.posts.length, comments: (ytResult.comments || []).length }
+        debug: { yt: ytResult.posts.length, ig: igResult.posts.length, igH: igHostsResult.posts.length, tt: ttResult.posts.length, ttH: ttHostsResult.posts.length, comments: allComments.length }
       };
 
       await saveStored(apifyToken, result);

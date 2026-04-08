@@ -1,4 +1,4 @@
-javascriptconst fetch = require("node-fetch");
+const fetch = require("node-fetch");
 
 var YOUTUBE_CHANNEL_HANDLE = "twobecontinuedhq";
 var IG_ACCOUNT = "twobecontinuedhq";
@@ -161,12 +161,12 @@ async function scrapeYouTube(ytKey) {
       }
     }
 
-    // Get ALL comments from ALL videos with pagination
+    // Get ALL comments from ALL videos, 3 pages each (300 per video max)
     var allComments = [];
     for (var i = 0; i < videoDetails.length; i++) {
       try {
         var nextPageToken = "";
-        for (var cp = 0; cp < 10; cp++) {
+        for (var cp = 0; cp < 3; cp++) {
           var commUrl = "https://www.googleapis.com/youtube/v3/commentThreads?part=snippet&videoId=" + videoDetails[i].id + "&maxResults=100&order=time&key=" + ytKey;
           if (nextPageToken) commUrl += "&pageToken=" + nextPageToken;
           var cr = await timeoutFetch(commUrl, {}, 5000);
@@ -301,7 +301,6 @@ exports.handler = async (event) => {
     var ytKey = process.env.YOUTUBE_API_KEY;
     var anthropicKey = process.env.ANTHROPIC_API_KEY;
     try {
-      // Run YouTube and Apify scrapers in parallel
       var allSettled = await Promise.allSettled([
         scrapeYouTube(ytKey),
         scrapeInstagramFast(apifyToken, IG_ACCOUNT, "instagram", []),
@@ -318,7 +317,6 @@ exports.handler = async (event) => {
 
       var episodes = ytResult.episodes || [];
 
-      // Re-tag Apify posts with correct episodes
       function retagPosts(posts) {
         return posts.map(function(p) {
           p.episode = detectEpisode(p.title, p.date, episodes);
@@ -352,7 +350,6 @@ exports.handler = async (event) => {
         followerHistory.sort(function(a, b) { return a.date.localeCompare(b.date); });
       }
 
-      // Sentiment analysis
       var allComments = ytResult.comments || [];
       allComments = await analyzeSentiment(allComments, anthropicKey);
 

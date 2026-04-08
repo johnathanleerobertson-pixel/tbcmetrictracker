@@ -333,23 +333,28 @@ exports.handler = async (event) => {
       ttResult.posts = retagPosts(ttResult.posts);
       ttHostsResult.posts = retagPosts(ttHostsResult.posts);
 
-      // Load existing for follower persistence and history
       var existing = await loadStored(apifyToken);
       var prevFollowers = (existing && existing.accountFollowers) || {};
-
-      // Keep last known value when scraper returns 0
-      var currentFollowers = {
-        youtube: ytResult.subscribers || prevFollowers.youtube || 0,
-        instagram: igResult.followers || prevFollowers.instagram || 0,
-        tiktok: ttResult.followers || prevFollowers.tiktok || 0,
-        instagram_hosts: igHostsResult.followers || prevFollowers.instagram_hosts || 0,
-        tiktok_hosts: ttHostsResult.followers || prevFollowers.tiktok_hosts || 0
-      };
-
       var followerHistory = (existing && existing.followerHistory) || [];
       var hasSeed = followerHistory.some(function(h) { return h.date === "2026-03-23"; });
       if (!hasSeed) followerHistory = SEED_HISTORY.concat(followerHistory);
       followerHistory = followerHistory.filter(function(h) { return !(h.date === "2026-04-01" && h.youtube === 3); });
+
+      function bestFollower(current, prev, historyKey) {
+        if (current > 0) return current;
+        if (prev > 0) return prev;
+        for (var i = followerHistory.length - 1; i >= 0; i--) {
+          if (followerHistory[i][historyKey] > 0) return followerHistory[i][historyKey];
+        }
+        return 0;
+      }
+      var currentFollowers = {
+        youtube: bestFollower(ytResult.subscribers, prevFollowers.youtube, "youtube"),
+        instagram: bestFollower(igResult.followers, prevFollowers.instagram, "instagram"),
+        tiktok: bestFollower(ttResult.followers, prevFollowers.tiktok, "tiktok"),
+        instagram_hosts: bestFollower(igHostsResult.followers, prevFollowers.instagram_hosts, "instagram_hosts"),
+        tiktok_hosts: bestFollower(ttHostsResult.followers, prevFollowers.tiktok_hosts, "tiktok_hosts")
+      };
 
       var today = new Date().toISOString().split("T")[0];
       var hasData = currentFollowers.youtube > 0 || currentFollowers.instagram > 0 || currentFollowers.tiktok > 0;

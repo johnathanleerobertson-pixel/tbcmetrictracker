@@ -1,4 +1,4 @@
-const fetch = require("node-fetch");
+ const fetch = require("node-fetch");
 
 exports.handler = async (event) => {
   const headers = {
@@ -59,38 +59,4 @@ exports.handler = async (event) => {
         return { statusCode: 200, headers, body: JSON.stringify({ error: "No JSON found", rawText: texts.substring(0, 2000) }) };
       }
 
-      let scraped;
-      try {
-        scraped = JSON.parse(jsonMatch[0].replace(/```json|```/g, "").trim());
-      } catch (e) {
-        return { statusCode: 200, headers, body: JSON.stringify({ error: "Parse failed", rawText: jsonMatch[0].substring(0, 1000) }) };
-      }
-
-      scraped.posts = (scraped.posts || []).map(p => ({
-        ...p,
-        id: Date.now().toString(36) + Math.random().toString(36).slice(2, 7)
-      }));
-
-      scraped.comments = (scraped.comments || []).map(c => ({
-        ...c,
-        id: Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
-        sentiment: "neutral",
-        score: 0.5
-      }));
-
-      const result = {
-        posts: scraped.posts,
-        comments: scraped.comments,
-        accountFollowers: scraped.accountFollowers || {},
-        lastUpdated: new Date().toISOString(),
-        lastScraped: new Date().toISOString()
-      };
-
-      return { statusCode: 200, headers, body: JSON.stringify(result) };
-    } catch (e) {
-      return { statusCode: 200, headers, body: JSON.stringify({ error: e.message }) };
-    }
-  }
-
-  return { statusCode: 405, headers, body: "Method not allowed" };
-};
+      let scr

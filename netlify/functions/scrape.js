@@ -4,8 +4,15 @@ var YOUTUBE_CHANNEL_HANDLE = "twobecontinuedhq";
 var IG_ACCOUNT = "twobecontinuedhq";
 var IG_HOSTS_ACCOUNT = "itsdelaneyandhadley";
 var TIKTOK_ACCOUNT = "twobecontinuedhq";
+var TIKTOK_HOSTS_ACCOUNT = "itsdelaneyandhadley";
 var STORE_NAME = "tbc-metrics-store";
 var RECORD_KEY = "latest";
+
+var SEED_HISTORY = [
+  { date: "2026-04-01", youtube: 3, instagram: 44, tiktok: 25, instagram_hosts: 260, tiktok_hosts: 40 }
+];
+
+var SKIP_WORDS = ["episode","with","podcast","continued","from","that","this","they","their","about","what","when","where","have","been","were","will","would","could","should","just","like","your","more","some","than","them","then","these","those","being","into","very","also","each","other","best","friends","twin","twins","sisters","hosts","first","second","talk","talks","full","show","live","clip","clips","short","shorts","part","official","preview","sneak","peek","behind","scenes","available","streaming","watch","listen","subscribe","follow","new","next","last","every","story","stories","tell","told","pregnancy","pregnant","panty","line","problems","problem","business","company","shark","tank","started","start","season","premiere","debut","launch","launched","coming","soon","announcement","announced","trailer","introducing","intro","teaser","promo","bonus"];
 
 function timeoutFetch(url, options, ms) {
   return Promise.race([
@@ -14,8 +21,41 @@ function timeoutFetch(url, options, ms) {
   ]);
 }
 
-function detectEpisode(title, episodes) {
-  if (!title) return "Promo";
+function extractGuestNames(title) {
+  if (!title) return null;
+  var words = title.replace(/[^a-zA-Z\s&]/g, " ").split(/\s+/);
+  var names = [];
+  for (var i = 0; i < words.length; i++) {
+    var w = words[i];
+    if (w === "&" || w === "and") continue;
+    if (w.length < 2) continue;
+    if (w[0] === w[0].toUpperCase() && w[0] !== w[0].toLowerCase()) {
+      var lower = w.toLowerCase();
+      if (!SKIP_WORDS.includes(lower) && lower !== "delaney" && lower !== "hadley" && lower !== "robertson" && lower !== "two" && lower !== "be") {
+        names.push(w);
+      }
+    }
+  }
+  if (names.length >= 2) return names[0] + " & " + names[1];
+  if (names.length === 1) return names[0];
+  return null;
+}
+
+function categorizeByDate(postDate, episodes) {
+  if (!postDate || !episodes.length) return "Promo";
+  var pd = new Date(postDate + "T12:00:00");
+  var sorted = episodes.slice().sort(function(a, b) { return new Date(a.date) - new Date(b.date); });
+  var firstEpDate = new Date(sorted[0].date + "T00:00:00");
+  if (pd < firstEpDate) return "Promo";
+  for (var i = sorted.length - 1; i >= 0; i--) {
+    var epDate = new Date(sorted[i].date + "T00:00:00");
+    if (pd >= epDate) return sorted[i].name;
+  }
+  return "Promo";
+}
+
+function detectEpisode(title, postDate, episodes) {
+  if (!title) return categorizeByDate(postDate, episodes);
   var tl = title.toLowerCase();
   if (tl.includes("trailer") || tl.includes("introducing")) return "Trailer";
   for (var i = 0; i < episodes.length; i++) {
@@ -23,7 +63,7 @@ function detectEpisode(title, episodes) {
       if (tl.includes(episodes[i].keywords[j])) return episodes[i].name;
     }
   }
-  return "Promo";
+  return categorizeByDate(postDate, episodes);
 }
 
 async function getOrCreateStore(token) {
@@ -74,16 +114,47 @@ async function scrapeYouTube(ytKey) {
     var channelId = handleData.items[0].id;
     var subscriberCount = parseInt(handleData.items[0].statistics.subscriberCount || "0", 10);
 
-    var videosRes = await timeoutFetch("https://www.googleapis.com/youtube/v3/search?part=snippet&channelId=" + channelId + "&type=video&order=date&maxResults=50&key=" + ytKey, {}, 8000);
-    var videosData = await videosRes.json();
-    var videoItems = videosData.items || [];
-    if (!videoItems.length) return { posts: [], comments: [], subscribers: subscriberCount, episodes: [] };
+    // Get uploads playlist for ALL videos (search endpoint can miss some)
+    var channelDetailRes = await timeoutFetch("https://www.googleapis.com/youtube/v3/channels?part=contentDetails&id=" + channelId + "&key=" + ytKey, {}, 8000);
+    var channelDetail = await channelDetailRes.json();
+    var uploadsPlaylistId = channelDetail.items && channelDetail.items[0] && channelDetail.items[0].contentDetails.relatedPlaylists.uploads;
 
-    var videoIds = videoItems.map(function(v) { return v.id.videoId; }).join(",");
-    var statsRes = await timeoutFetch("https://www.googleapis.com/youtube/v3/videos?part=statistics,snippet,contentDetails&id=" + videoIds + "&key=" + ytKey, {}, 8000);
-    var statsData = await statsRes.json();
-    var videoDetails = statsData.items || [];
+    var allVideoIds = [];
+    if (uploadsPlaylistId) {
+      var nextPage = "";
+      for (var page = 0; page < 5; page++) {
+        var plUrl = "https://www.googleapis.com/youtube/v3/playlistItems?part=contentDetails&playlistId=" + uploadsPlaylistId + "&maxResults=50&key=" + ytKey;
+        if (nextPage) plUrl += "&pageToken=" + nextPage;
+        var plRes = await timeoutFetch(plUrl, {}, 8000);
+        var plData = await plRes.json();
+        var plItems = plData.items || [];
+        for (var pi = 0; pi < plItems.length; pi++) {
+          allVideoIds.push(plItems[pi].contentDetails.videoId);
+        }
+        nextPage = plData.nextPageToken;
+        if (!nextPage) break;
+      }
+    }
 
+    if (!allVideoIds.length) {
+      // Fallback to search
+      var videosRes = await timeoutFetch("https://www.googleapis.com/youtube/v3/search?part=snippet&channelId=" + channelId + "&type=video&order=date&maxResults=50&key=" + ytKey, {}, 8000);
+      var videosData = await videosRes.json();
+      allVideoIds = (videosData.items || []).map(function(v) { return v.id.videoId; });
+    }
+
+    if (!allVideoIds.length) return { posts: [], comments: [], subscribers: subscriberCount, episodes: [] };
+
+    // Get details in batches of 50
+    var videoDetails = [];
+    for (var batch = 0; batch < allVideoIds.length; batch += 50) {
+      var batchIds = allVideoIds.slice(batch, batch + 50).join(",");
+      var statsRes = await timeoutFetch("https://www.googleapis.com/youtube/v3/videos?part=statistics,snippet,contentDetails&id=" + batchIds + "&key=" + ytKey, {}, 8000);
+      var statsData = await statsRes.json();
+      videoDetails = videoDetails.concat(statsData.items || []);
+    }
+
+    // Detect episodes: videos >= 20 minutes, sorted by date
     var episodes = [];
     var episodeNum = 0;
     var sorted = videoDetails.slice().sort(function(a, b) { return new Date(a.snippet.publishedAt) - new Date(b.snippet.publishedAt); });
@@ -96,13 +167,15 @@ async function scrapeYouTube(ytKey) {
       if (mMatch) minutes += parseInt(mMatch[1]);
       if (minutes >= 20) {
         episodeNum++;
+        var guestName = extractGuestNames(sorted[v].snippet.title) || ("Episode " + episodeNum);
         var words = sorted[v].snippet.title.toLowerCase().replace(/[^a-z0-9\s]/g, "").split(/\s+/).filter(function(w) {
-          return w.length > 3 && !["episode", "with", "podcast", "continued", "from", "that", "this", "they", "their", "about", "what", "when", "where", "have", "been", "were", "will", "would", "could", "should", "just", "like", "your", "more", "some", "than", "them", "then", "these", "those", "being", "into", "very", "also", "each", "other"].includes(w);
+          return w.length > 3 && !SKIP_WORDS.includes(w);
         });
-        episodes.push({ name: "Episode " + episodeNum, keywords: words, title: sorted[v].snippet.title, date: sorted[v].snippet.publishedAt.split("T")[0] });
+        episodes.push({ name: guestName, num: episodeNum, keywords: words, title: sorted[v].snippet.title, date: sorted[v].snippet.publishedAt.split("T")[0] });
       }
     }
 
+    // Get comments
     var allComments = [];
     for (var i = 0; i < Math.min(videoDetails.length, 3); i++) {
       try {
@@ -116,6 +189,7 @@ async function scrapeYouTube(ytKey) {
       } catch (e) {}
     }
 
+    // Build posts
     var posts = videoDetails.map(function(v) {
       var dur = v.contentDetails.duration;
       var mins = 0;
@@ -125,10 +199,11 @@ async function scrapeYouTube(ytKey) {
       if (mM) mins += parseInt(mM[1]);
       var ep = "Promo";
       var tl = v.snippet.title.toLowerCase();
+      var postDate = v.snippet.publishedAt.split("T")[0];
       if (tl.includes("trailer") || tl.includes("introducing")) { ep = "Trailer"; }
       else if (mins >= 20) { for (var e = 0; e < episodes.length; e++) { if (episodes[e].title === v.snippet.title) { ep = episodes[e].name; break; } } }
-      else { ep = detectEpisode(v.snippet.title, episodes); }
-      return { id: "yt_" + v.id, title: v.snippet.title, platform: "youtube", episode: ep, date: v.snippet.publishedAt.split("T")[0], likes: parseInt(v.statistics.likeCount || "0", 10), commentCount: parseInt(v.statistics.commentCount || "0", 10), views: parseInt(v.statistics.viewCount || "0", 10), followerGain: 0, url: "https://www.youtube.com/watch?v=" + v.id };
+      else { ep = detectEpisode(v.snippet.title, postDate, episodes); }
+      return { id: "yt_" + v.id, title: v.snippet.title, platform: "youtube", episode: ep, date: postDate, likes: parseInt(v.statistics.likeCount || "0", 10), commentCount: parseInt(v.statistics.commentCount || "0", 10), views: parseInt(v.statistics.viewCount || "0", 10), followerGain: 0, url: "https://www.youtube.com/watch?v=" + v.id };
     });
 
     return { posts: posts, comments: allComments, subscribers: subscriberCount, episodes: episodes };
@@ -154,13 +229,14 @@ async function scrapeInstagramFast(token, username, platformLabel, episodes) {
       var p = recentPosts[i];
       var caption = (p.caption || p.alt || "").substring(0, 200);
       var title = caption || ("Post " + (i + 1));
-      var ep = detectEpisode(title, episodes);
+      var postDate = p.timestamp ? p.timestamp.split("T")[0] : new Date().toISOString().split("T")[0];
+      var ep = detectEpisode(title, postDate, episodes);
       posts.push({
         id: "ig_" + (p.shortCode || Date.now().toString(36) + Math.random().toString(36).slice(2, 5)),
         title: title.substring(0, 120),
         platform: platformLabel,
         episode: ep,
-        date: p.timestamp ? p.timestamp.split("T")[0] : new Date().toISOString().split("T")[0],
+        date: postDate,
         likes: p.likesCount || 0,
         commentCount: p.commentsCount || 0,
         views: p.videoViewCount || 0,
@@ -172,7 +248,7 @@ async function scrapeInstagramFast(token, username, platformLabel, episodes) {
   } catch (e) { return { posts: [], followers: 0 }; }
 }
 
-async function scrapeTikTok(token, username, episodes) {
+async function scrapeTikTok(token, username, platformKey, episodes) {
   if (!token) return { posts: [], followers: 0 };
   try {
     var res = await timeoutFetch("https://api.apify.com/v2/acts/clockworks~tiktok-scraper/run-sync-get-dataset-items?token=" + token + "&timeout=10", {
@@ -190,8 +266,9 @@ async function scrapeTikTok(token, username, episodes) {
       if (item.authorMeta && item.authorMeta.fans) followers = item.authorMeta.fans;
       var caption = (item.text || item.desc || "").substring(0, 200);
       var title = caption || ("TikTok " + (i + 1));
-      var ep = detectEpisode(title, episodes);
-      posts.push({ id: "tt_" + (item.id || Date.now().toString(36) + Math.random().toString(36).slice(2, 5)), title: title.substring(0, 120), platform: "tiktok", episode: ep, date: item.createTimeISO ? item.createTimeISO.split("T")[0] : new Date().toISOString().split("T")[0], likes: item.diggCount || item.likesCount || 0, commentCount: item.commentCount || item.commentsCount || 0, views: item.playCount || item.videoViewCount || 0, followerGain: 0, url: item.webVideoUrl || "https://www.tiktok.com/@" + username });
+      var postDate = item.createTimeISO ? item.createTimeISO.split("T")[0] : new Date().toISOString().split("T")[0];
+      var ep = detectEpisode(title, postDate, episodes);
+      posts.push({ id: "tt_" + (item.id || Date.now().toString(36) + Math.random().toString(36).slice(2, 5)), title: title.substring(0, 120), platform: platformKey, episode: ep, date: postDate, likes: item.diggCount || item.likesCount || 0, commentCount: item.commentCount || item.commentsCount || 0, views: item.playCount || item.videoViewCount || 0, followerGain: 0, url: item.webVideoUrl || "https://www.tiktok.com/@" + username });
     }
     return { posts: posts, followers: followers };
   } catch (e) { return { posts: [], followers: 0 }; }
@@ -217,50 +294,58 @@ exports.handler = async (event) => {
       var settled = await Promise.allSettled([
         scrapeInstagramFast(apifyToken, IG_ACCOUNT, "instagram", episodes),
         scrapeInstagramFast(apifyToken, IG_HOSTS_ACCOUNT, "instagram_hosts", episodes),
-        scrapeTikTok(apifyToken, TIKTOK_ACCOUNT, episodes)
+        scrapeTikTok(apifyToken, TIKTOK_ACCOUNT, "tiktok", episodes),
+        scrapeTikTok(apifyToken, TIKTOK_HOSTS_ACCOUNT, "tiktok_hosts", episodes)
       ]);
 
       var igResult = settled[0].status === "fulfilled" ? settled[0].value : { posts: [], followers: 0 };
       var igHostsResult = settled[1].status === "fulfilled" ? settled[1].value : { posts: [], followers: 0 };
       var ttResult = settled[2].status === "fulfilled" ? settled[2].value : { posts: [], followers: 0 };
+      var ttHostsResult = settled[3].status === "fulfilled" ? settled[3].value : { posts: [], followers: 0 };
 
       var currentFollowers = {
         youtube: ytResult.subscribers,
         instagram: igResult.followers,
         tiktok: ttResult.followers,
-        instagram_hosts: igHostsResult.followers
+        instagram_hosts: igHostsResult.followers,
+        tiktok_hosts: ttHostsResult.followers
       };
 
-      // Load existing data to get follower history
+      // Load existing follower history
       var existing = await loadStored(apifyToken);
       var followerHistory = (existing && existing.followerHistory) || [];
 
-      // Add new data point (only if we have at least some data)
+      // Ensure seed data exists
+      var hasSeed = followerHistory.some(function(h) { return h.date === "2026-04-01"; });
+      if (!hasSeed) {
+        followerHistory = SEED_HISTORY.concat(followerHistory);
+      }
+
+      // Add today's data point
       var today = new Date().toISOString().split("T")[0];
-      var hasData = currentFollowers.youtube > 0 || currentFollowers.instagram > 0 || currentFollowers.tiktok > 0 || currentFollowers.instagram_hosts > 0;
+      var hasData = currentFollowers.youtube > 0 || currentFollowers.instagram > 0 || currentFollowers.tiktok > 0;
       if (hasData) {
-        // Remove any existing entry for today (replace with latest)
         followerHistory = followerHistory.filter(function(h) { return h.date !== today; });
         followerHistory.push({
           date: today,
           youtube: currentFollowers.youtube,
           instagram: currentFollowers.instagram,
           tiktok: currentFollowers.tiktok,
-          instagram_hosts: currentFollowers.instagram_hosts
+          instagram_hosts: currentFollowers.instagram_hosts,
+          tiktok_hosts: currentFollowers.tiktok_hosts
         });
-        // Keep last 365 days
-        if (followerHistory.length > 365) followerHistory = followerHistory.slice(-365);
+        followerHistory.sort(function(a, b) { return a.date.localeCompare(b.date); });
       }
 
       var result = {
-        posts: [].concat(ytResult.posts, igResult.posts, igHostsResult.posts, ttResult.posts),
+        posts: [].concat(ytResult.posts, igResult.posts, igHostsResult.posts, ttResult.posts, ttHostsResult.posts),
         comments: ytResult.comments || [],
         accountFollowers: currentFollowers,
         followerHistory: followerHistory,
         lastUpdated: new Date().toISOString(),
         lastScraped: new Date().toISOString(),
-        episodes: episodes.map(function(e) { return { name: e.name, title: e.title, date: e.date }; }),
-        debug: { yt: ytResult.posts.length, ig: igResult.posts.length, igH: igHostsResult.posts.length, tt: ttResult.posts.length }
+        episodes: episodes.map(function(e) { return { name: e.name, title: e.title, date: e.date, num: e.num }; }),
+        debug: { yt: ytResult.posts.length, ig: igResult.posts.length, igH: igHostsResult.posts.length, tt: ttResult.posts.length, ttH: ttHostsResult.posts.length }
       };
 
       await saveStored(apifyToken, result);

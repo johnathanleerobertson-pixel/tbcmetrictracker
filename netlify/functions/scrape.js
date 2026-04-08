@@ -99,7 +99,7 @@ async function scrapeYouTube(ytKey) {
         var words = sorted[v].snippet.title.toLowerCase().replace(/[^a-z0-9\s]/g, "").split(/\s+/).filter(function(w) {
           return w.length > 3 && !["episode", "with", "podcast", "continued", "from", "that", "this", "they", "their", "about", "what", "when", "where", "have", "been", "were", "will", "would", "could", "should", "just", "like", "your", "more", "some", "than", "them", "then", "these", "those", "being", "into", "very", "also", "each", "other"].includes(w);
         });
-        episodes.push({ name: "Episode " + episodeNum, keywords: words, title: sorted[v].snippet.title });
+        episodes.push({ name: "Episode " + episodeNum, keywords: words, title: sorted[v].snippet.title, date: sorted[v].snippet.publishedAt.split("T")[0] });
       }
     }
 
@@ -224,18 +224,46 @@ exports.handler = async (event) => {
       var igHostsResult = settled[1].status === "fulfilled" ? settled[1].value : { posts: [], followers: 0 };
       var ttResult = settled[2].status === "fulfilled" ? settled[2].value : { posts: [], followers: 0 };
 
+      var currentFollowers = {
+        youtube: ytResult.subscribers,
+        instagram: igResult.followers,
+        tiktok: ttResult.followers,
+        instagram_hosts: igHostsResult.followers
+      };
+
+      // Load existing data to get follower history
+      var existing = await loadStored(apifyToken);
+      var followerHistory = (existing && existing.followerHistory) || [];
+
+      // Add new data point (only if we have at least some data)
+      var today = new Date().toISOString().split("T")[0];
+      var hasData = currentFollowers.youtube > 0 || currentFollowers.instagram > 0 || currentFollowers.tiktok > 0 || currentFollowers.instagram_hosts > 0;
+      if (hasData) {
+        // Remove any existing entry for today (replace with latest)
+        followerHistory = followerHistory.filter(function(h) { return h.date !== today; });
+        followerHistory.push({
+          date: today,
+          youtube: currentFollowers.youtube,
+          instagram: currentFollowers.instagram,
+          tiktok: currentFollowers.tiktok,
+          instagram_hosts: currentFollowers.instagram_hosts
+        });
+        // Keep last 365 days
+        if (followerHistory.length > 365) followerHistory = followerHistory.slice(-365);
+      }
+
       var result = {
         posts: [].concat(ytResult.posts, igResult.posts, igHostsResult.posts, ttResult.posts),
         comments: ytResult.comments || [],
-        accountFollowers: { youtube: ytResult.subscribers, instagram: igResult.followers, tiktok: ttResult.followers, instagram_hosts: igHostsResult.followers },
+        accountFollowers: currentFollowers,
+        followerHistory: followerHistory,
         lastUpdated: new Date().toISOString(),
         lastScraped: new Date().toISOString(),
-        episodes: episodes.map(function(e) { return { name: e.name, title: e.title }; }),
+        episodes: episodes.map(function(e) { return { name: e.name, title: e.title, date: e.date }; }),
         debug: { yt: ytResult.posts.length, ig: igResult.posts.length, igH: igHostsResult.posts.length, tt: ttResult.posts.length }
       };
 
-      var saveErr = await saveStored(apifyToken, result);
-      result.debug.saveError = saveErr;
+      await saveStored(apifyToken, result);
       return { statusCode: 200, headers: headers, body: JSON.stringify(result) };
     } catch (e) {
       return { statusCode: 200, headers: headers, body: JSON.stringify({ error: e.message }) };

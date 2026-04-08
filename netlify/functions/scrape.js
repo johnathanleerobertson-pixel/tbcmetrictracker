@@ -1,4 +1,5 @@
 const fetch = require("node-fetch");
+const { getStore } = require("@netlify/blobs");
 
 var YOUTUBE_CHANNEL_HANDLE = "twobecontinuedhq";
 var IG_ACCOUNT = "twobecontinuedhq";
@@ -25,24 +26,19 @@ function detectEpisode(title, episodes) {
   return "Promo";
 }
 
-async function loadStored(apifyToken) {
-  if (!apifyToken) return null;
+async function loadStored() {
   try {
-    var res = await timeoutFetch("https://api.apify.com/v2/key-value-stores/default/records/" + STORAGE_KEY + "?token=" + apifyToken, {}, 5000);
-    if (!res.ok) return null;
-    return await res.json();
+    var store = getStore("tbc-data");
+    var data = await store.get(STORAGE_KEY, { type: "json" });
+    return data || null;
   } catch (e) { return null; }
 }
 
-async function saveStored(apifyToken, data) {
-  if (!apifyToken) return;
+async function saveStored(data) {
   try {
-    await timeoutFetch("https://api.apify.com/v2/key-value-stores/default/records/" + STORAGE_KEY + "?token=" + apifyToken, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data)
-    }, 5000);
-  } catch (e) {}
+    var store = getStore("tbc-data");
+    await store.setJSON(STORAGE_KEY, data);
+  } catch (e) { console.log("Save error:", e.message); }
 }
 
 async function scrapeYouTube(ytKey) {
@@ -181,15 +177,14 @@ exports.handler = async (event) => {
   var headers = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "Content-Type", "Content-Type": "application/json" };
   if (event.httpMethod === "OPTIONS") return { statusCode: 200, headers: headers, body: "" };
 
-  var apifyToken = process.env.APIFY_API_TOKEN;
-
   if (event.httpMethod === "GET") {
-    var stored = await loadStored(apifyToken);
+    var stored = await loadStored();
     return { statusCode: 200, headers: headers, body: JSON.stringify(stored || { posts: [], comments: [], lastUpdated: null }) };
   }
 
   if (event.httpMethod === "POST") {
     var ytKey = process.env.YOUTUBE_API_KEY;
+    var apifyToken = process.env.APIFY_API_TOKEN;
     try {
       var ytResult = await scrapeYouTube(ytKey);
       var episodes = ytResult.episodes || [];
@@ -214,7 +209,7 @@ exports.handler = async (event) => {
         debug: { yt: ytResult.posts.length, ig: igResult.posts.length, igH: igHostsResult.posts.length, tt: ttResult.posts.length }
       };
 
-      await saveStored(apifyToken, result);
+      await saveStored(result);
       return { statusCode: 200, headers: headers, body: JSON.stringify(result) };
     } catch (e) {
       return { statusCode: 200, headers: headers, body: JSON.stringify({ error: e.message }) };

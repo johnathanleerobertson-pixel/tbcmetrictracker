@@ -31,11 +31,11 @@ exports.handler = async (event) => {
         },
         body: JSON.stringify({
           model: "claude-sonnet-4-20250514",
-          max_tokens: 8000,
+          max_tokens: 16000,
           tools: [{ type: "web_search_20250305", name: "web_search" }],
           messages: [{
             role: "user",
-            content: "Search the web for the YouTube channel @twobecontinuedhq and find any videos. Also search for the Instagram account @twobecontinuedhq. Report what you find including video titles, view counts, like counts, and follower counts. Return your findings as JSON in this format: {\"posts\":[{\"title\":\"...\",\"platform\":\"youtube\",\"episode\":\"Episode 1\",\"date\":\"2026-04-05\",\"likes\":0,\"commentCount\":0,\"views\":0,\"followerGain\":0}],\"comments\":[],\"accountFollowers\":{\"instagram\":0,\"youtube\":0,\"tiktok\":0,\"instagram_hosts\":0}}"
+            content: "I need you to find social media engagement data for a brand new podcast called \"Two Be Continued\" hosted by twin sisters Delaney and Hadley Robertson (they are Emmy-winning PBS hosts of \"Twice As Good\"). The podcast is a duo-on-duo format. Episode 1 features Stringys co-founders Olivia Karina and Elvira Novek Troger.\n\nPlease search for ALL of these specific things:\n\n1. Search: \"two be continued\" podcast Delaney Hadley\n2. Search: \"twobecontinuedhq\" \n3. Search: twobecontinuedhq.com\n4. Search: \"Delaney and Hadley Robertson\" podcast 2026\n5. Search: \"Twice As Good\" PBS twins podcast\n6. Search: site:youtube.com twobecontinuedhq\n7. Search: site:instagram.com twobecontinuedhq\n8. Search: site:tiktok.com twobecontinuedhq\n9. Search: itsdelaneyandhadley instagram\n10. Search: \"two be continued\" podcast stringys\n\nFor ANY content you find, extract: post titles, like counts, comment counts, view counts, follower counts, dates posted.\n\nReturn ONLY valid JSON (no markdown fences, no explanation before or after the JSON):\n{\"posts\":[{\"title\":\"...\",\"platform\":\"youtube|instagram|tiktok|instagram_hosts\",\"episode\":\"Episode 1|Trailer|Promo\",\"date\":\"YYYY-MM-DD\",\"likes\":0,\"commentCount\":0,\"views\":0,\"followerGain\":0}],\"comments\":[{\"text\":\"...\",\"postTitle\":\"...\",\"author\":\"...\",\"date\":\"YYYY-MM-DD\"}],\"accountFollowers\":{\"instagram\":0,\"youtube\":0,\"tiktok\":0,\"instagram_hosts\":0}}"
           }]
         })
       });
@@ -43,25 +43,52 @@ exports.handler = async (event) => {
       const apiData = await response.json();
 
       if (apiData.error) {
-        return { statusCode: 200, headers, body: JSON.stringify({ debug: "api_error", error: apiData.error }) };
+        return { statusCode: 200, headers, body: JSON.stringify({ error: apiData.error.message || "API error" }) };
       }
 
       const allContent = apiData.content || [];
       const texts = allContent.filter(b => b.type === "text").map(b => b.text).join("\n");
-      const types = allContent.map(b => b.type);
 
-      // Return raw debug info so we can see everything
-      return { statusCode: 200, headers, body: JSON.stringify({ 
-        debug: "raw_response",
-        contentTypes: types,
-        contentCount: allContent.length,
-        textLength: texts.length,
-        rawText: texts.substring(0, 2000),
-        stopReason: apiData.stop_reason
-      }) };
+      if (!texts || texts.trim().length === 0) {
+        return { statusCode: 200, headers, body: JSON.stringify({ error: "No text response", contentTypes: allContent.map(b => b.type) }) };
+      }
 
+      const jsonMatch = texts.match(/\{[\s\S]*"posts"[\s\S]*\}/);
+
+      if (!jsonMatch) {
+        return { statusCode: 200, headers, body: JSON.stringify({ error: "No JSON found", rawText: texts.substring(0, 2000) }) };
+      }
+
+      let scraped;
+      try {
+        scraped = JSON.parse(jsonMatch[0].replace(/```json|```/g, "").trim());
+      } catch (e) {
+        return { statusCode: 200, headers, body: JSON.stringify({ error: "Parse failed", rawText: jsonMatch[0].substring(0, 1000) }) };
+      }
+
+      scraped.posts = (scraped.posts || []).map(p => ({
+        ...p,
+        id: Date.now().toString(36) + Math.random().toString(36).slice(2, 7)
+      }));
+
+      scraped.comments = (scraped.comments || []).map(c => ({
+        ...c,
+        id: Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
+        sentiment: "neutral",
+        score: 0.5
+      }));
+
+      const result = {
+        posts: scraped.posts,
+        comments: scraped.comments,
+        accountFollowers: scraped.accountFollowers || {},
+        lastUpdated: new Date().toISOString(),
+        lastScraped: new Date().toISOString()
+      };
+
+      return { statusCode: 200, headers, body: JSON.stringify(result) };
     } catch (e) {
-      return { statusCode: 200, headers, body: JSON.stringify({ debug: "catch", error: e.message }) };
+      return { statusCode: 200, headers, body: JSON.stringify({ error: e.message }) };
     }
   }
 

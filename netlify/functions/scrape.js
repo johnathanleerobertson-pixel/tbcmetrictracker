@@ -9,7 +9,7 @@ var STORE_NAME = "tbc-metrics-store";
 var RECORD_KEY = "latest";
 
 var SEED_HISTORY = [
-  { date: "2026-04-01", youtube: 3, instagram: 44, tiktok: 25, instagram_hosts: 260, tiktok_hosts: 40 }
+  { date: "2026-03-23", youtube: 3, instagram: 44, tiktok: 25, instagram_hosts: 260, tiktok_hosts: 40 }
 ];
 
 var SKIP_WORDS = ["episode","with","podcast","continued","from","that","this","they","their","about","what","when","where","have","been","were","will","would","could","should","just","like","your","more","some","than","them","then","these","those","being","into","very","also","each","other","best","friends","twin","twins","sisters","hosts","first","second","talk","talks","full","show","live","clip","clips","short","shorts","part","official","preview","sneak","peek","behind","scenes","available","streaming","watch","listen","subscribe","follow","new","next","last","every","story","stories","tell","told","pregnancy","pregnant","panty","line","problems","problem","business","company","shark","tank","started","start","season","premiere","debut","launch","launched","coming","soon","announcement","announced","trailer","introducing","intro","teaser","promo","bonus"];
@@ -114,7 +114,6 @@ async function scrapeYouTube(ytKey) {
     var channelId = handleData.items[0].id;
     var subscriberCount = parseInt(handleData.items[0].statistics.subscriberCount || "0", 10);
 
-    // Get uploads playlist for ALL videos (search endpoint can miss some)
     var channelDetailRes = await timeoutFetch("https://www.googleapis.com/youtube/v3/channels?part=contentDetails&id=" + channelId + "&key=" + ytKey, {}, 8000);
     var channelDetail = await channelDetailRes.json();
     var uploadsPlaylistId = channelDetail.items && channelDetail.items[0] && channelDetail.items[0].contentDetails.relatedPlaylists.uploads;
@@ -136,16 +135,8 @@ async function scrapeYouTube(ytKey) {
       }
     }
 
-    if (!allVideoIds.length) {
-      // Fallback to search
-      var videosRes = await timeoutFetch("https://www.googleapis.com/youtube/v3/search?part=snippet&channelId=" + channelId + "&type=video&order=date&maxResults=50&key=" + ytKey, {}, 8000);
-      var videosData = await videosRes.json();
-      allVideoIds = (videosData.items || []).map(function(v) { return v.id.videoId; });
-    }
-
     if (!allVideoIds.length) return { posts: [], comments: [], subscribers: subscriberCount, episodes: [] };
 
-    // Get details in batches of 50
     var videoDetails = [];
     for (var batch = 0; batch < allVideoIds.length; batch += 50) {
       var batchIds = allVideoIds.slice(batch, batch + 50).join(",");
@@ -154,7 +145,6 @@ async function scrapeYouTube(ytKey) {
       videoDetails = videoDetails.concat(statsData.items || []);
     }
 
-    // Detect episodes: videos >= 20 minutes, sorted by date
     var episodes = [];
     var episodeNum = 0;
     var sorted = videoDetails.slice().sort(function(a, b) { return new Date(a.snippet.publishedAt) - new Date(b.snippet.publishedAt); });
@@ -175,21 +165,27 @@ async function scrapeYouTube(ytKey) {
       }
     }
 
-    // Get comments
+    // Get comments from ALL videos, up to 100 per video
     var allComments = [];
-    for (var i = 0; i < Math.min(videoDetails.length, 3); i++) {
+    for (var i = 0; i < videoDetails.length; i++) {
       try {
-        var cr = await timeoutFetch("https://www.googleapis.com/youtube/v3/commentThreads?part=snippet&videoId=" + videoDetails[i].id + "&maxResults=10&order=relevance&key=" + ytKey, {}, 5000);
-        var cd = await cr.json();
-        var threads = cd.items || [];
-        for (var j = 0; j < threads.length; j++) {
-          var c = threads[j].snippet.topLevelComment.snippet;
-          allComments.push({ id: threads[j].id, text: c.textDisplay, author: c.authorDisplayName, date: c.publishedAt.split("T")[0], postTitle: videoDetails[i].snippet.title, platform: "youtube", sentiment: "neutral", score: 0.5 });
+        var nextPageToken = "";
+        for (var cp = 0; cp < 5; cp++) {
+          var commUrl = "https://www.googleapis.com/youtube/v3/commentThreads?part=snippet&videoId=" + videoDetails[i].id + "&maxResults=100&order=relevance&key=" + ytKey;
+          if (nextPageToken) commUrl += "&pageToken=" + nextPageToken;
+          var cr = await timeoutFetch(commUrl, {}, 5000);
+          var cd = await cr.json();
+          var threads = cd.items || [];
+          for (var j = 0; j < threads.length; j++) {
+            var c = threads[j].snippet.topLevelComment.snippet;
+            allComments.push({ id: threads[j].id, text: c.textDisplay, author: c.authorDisplayName, date: c.publishedAt.split("T")[0], postTitle: videoDetails[i].snippet.title, platform: "youtube", sentiment: "neutral", score: 0.5 });
+          }
+          nextPageToken = cd.nextPageToken;
+          if (!nextPageToken) break;
         }
       } catch (e) {}
     }
 
-    // Build posts
     var posts = videoDetails.map(function(v) {
       var dur = v.contentDetails.duration;
       var mins = 0;
@@ -263,7 +259,13 @@ async function scrapeTikTok(token, username, platformKey, episodes) {
     var posts = [];
     for (var i = 0; i < items.length; i++) {
       var item = items[i];
-      if (item.authorMeta && item.authorMeta.fans) followers = item.authorMeta.fans;
+      // Check multiple possible follower fields
+      if (item.authorMeta) {
+        followers = item.authorMeta.fans || item.authorMeta.followers || item.authorMeta.followerCount || followers;
+      }
+      if (item.author && !followers) {
+        followers = item.author.fans || item.author.followers || item.author.followerCount || followers;
+      }
       var caption = (item.text || item.desc || "").substring(0, 200);
       var title = caption || ("TikTok " + (i + 1));
       var postDate = item.createTimeISO ? item.createTimeISO.split("T")[0] : new Date().toISOString().split("T")[0];
@@ -311,17 +313,16 @@ exports.handler = async (event) => {
         tiktok_hosts: ttHostsResult.followers
       };
 
-      // Load existing follower history
       var existing = await loadStored(apifyToken);
       var followerHistory = (existing && existing.followerHistory) || [];
 
-      // Ensure seed data exists
-      var hasSeed = followerHistory.some(function(h) { return h.date === "2026-04-01"; });
+      var hasSeed = followerHistory.some(function(h) { return h.date === "2026-03-23"; });
       if (!hasSeed) {
         followerHistory = SEED_HISTORY.concat(followerHistory);
       }
+      // Remove old April 1 seed if present
+      followerHistory = followerHistory.filter(function(h) { return h.date !== "2026-04-01" || h.youtube !== 3; });
 
-      // Add today's data point
       var today = new Date().toISOString().split("T")[0];
       var hasData = currentFollowers.youtube > 0 || currentFollowers.instagram > 0 || currentFollowers.tiktok > 0;
       if (hasData) {
@@ -345,7 +346,7 @@ exports.handler = async (event) => {
         lastUpdated: new Date().toISOString(),
         lastScraped: new Date().toISOString(),
         episodes: episodes.map(function(e) { return { name: e.name, title: e.title, date: e.date, num: e.num }; }),
-        debug: { yt: ytResult.posts.length, ig: igResult.posts.length, igH: igHostsResult.posts.length, tt: ttResult.posts.length, ttH: ttHostsResult.posts.length }
+        debug: { yt: ytResult.posts.length, ig: igResult.posts.length, igH: igHostsResult.posts.length, tt: ttResult.posts.length, ttH: ttHostsResult.posts.length, comments: (ytResult.comments || []).length }
       };
 
       await saveStored(apifyToken, result);

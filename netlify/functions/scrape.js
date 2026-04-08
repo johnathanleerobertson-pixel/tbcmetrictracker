@@ -1,7 +1,5 @@
 const fetch = require("node-fetch");
 
-let cachedData = { posts: [], comments: [], lastUpdated: null };
-
 exports.handler = async (event) => {
   const headers = {
     "Access-Control-Allow-Origin": "*",
@@ -14,7 +12,7 @@ exports.handler = async (event) => {
   }
 
   if (event.httpMethod === "GET") {
-    return { statusCode: 200, headers, body: JSON.stringify(cachedData) };
+    return { statusCode: 200, headers, body: JSON.stringify({ posts: [], comments: [], lastUpdated: null }) };
   }
 
   if (event.httpMethod === "POST") {
@@ -45,19 +43,40 @@ exports.handler = async (event) => {
       const apiData = await response.json();
 
       if (apiData.error) {
-        return { statusCode: 500, headers, body: JSON.stringify({ error: apiData.error.message || "API error" }) };
+        return { statusCode: 200, headers, body: JSON.stringify({ error: apiData.error.message || "API error", debug: "api_error" }) };
       }
 
-      const texts = (apiData.content || []).filter(b => b.type === "text").map(b => b.text).join("\n");
+      const allContent = apiData.content || [];
+      const texts = allContent.filter(b => b.type === "text").map(b => b.text).join("\n");
+
+      if (!texts || texts.trim().length === 0) {
+        return { statusCode: 200, headers, body: JSON.stringify({ 
+          error: "No text in API response", 
+          debug: "no_text",
+          contentTypes: allContent.map(b => b.type),
+          contentCount: allContent.length
+        }) };
+      }
+
       const jsonMatch = texts.match(/\{[\s\S]*"posts"[\s\S]*\}/);
 
-      let scraped = { posts: [], comments: [] };
-      if (jsonMatch) {
-        try {
-          scraped = JSON.parse(jsonMatch[0].replace(/```json|```/g, "").trim());
-        } catch (e) {
-          return { statusCode: 500, headers, body: JSON.stringify({ error: "Failed to parse API response" }) };
-        }
+      if (!jsonMatch) {
+        return { statusCode: 200, headers, body: JSON.stringify({ 
+          error: "No JSON found in response", 
+          debug: "no_json",
+          rawText: texts.substring(0, 1000)
+        }) };
+      }
+
+      let scraped;
+      try {
+        scraped = JSON.parse(jsonMatch[0].replace(/```json|```/g, "").trim());
+      } catch (e) {
+        return { statusCode: 200, headers, body: JSON.stringify({ 
+          error: "JSON parse failed", 
+          debug: "parse_fail",
+          rawText: jsonMatch[0].substring(0, 1000)
+        }) };
       }
 
       scraped.posts = (scraped.posts || []).map(p => ({
@@ -80,11 +99,9 @@ exports.handler = async (event) => {
         lastScraped: new Date().toISOString()
       };
 
-      cachedData = result;
-
       return { statusCode: 200, headers, body: JSON.stringify(result) };
     } catch (e) {
-      return { statusCode: 500, headers, body: JSON.stringify({ error: e.message }) };
+      return { statusCode: 200, headers, body: JSON.stringify({ error: e.message, debug: "catch" }) };
     }
   }
 

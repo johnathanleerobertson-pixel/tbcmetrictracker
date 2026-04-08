@@ -112,7 +112,7 @@ function Header({ activeTab, setActiveTab, lastUpdated, onScrape, scraping }) {
   const tabs = [
     { id: "dashboard", label: "Dashboard", icon: "◉" },
     { id: "posts", label: "Posts", icon: "▤" },
-    { id: "comments", label: "Comments", icon: "💬" },
+    { id: "comments", label: "Comment Sentiment", icon: "💬" },
     { id: "trends", label: "Trends", icon: "📈" },
 
   ];
@@ -227,10 +227,7 @@ function DashboardTab({ posts, comments, accountFollowers, followerHistory, epis
   ];
 
   var episodeDates = (episodes || []).filter(function(ep) { return ep.date; });
-  var epDateMap = {};
-  episodeDates.forEach(function(ep) { epDateMap[ep.date] = ep.name; });
 
-  // Build chart data - dates only, no episode text on x-axis
   var chartData = history.map(function(h) {
     return {
       date: h.date,
@@ -243,7 +240,7 @@ function DashboardTab({ posts, comments, accountFollowers, followerHistory, epis
     };
   }).sort(function(a, b) { return new Date(a.date) - new Date(b.date); });
 
-  // Insert episode dates as data points if missing
+  // Insert episode dates if missing
   episodeDates.forEach(function(ep) {
     var exists = chartData.some(function(d) { return d.date === ep.date; });
     if (!exists) {
@@ -296,9 +293,31 @@ function DashboardTab({ posts, comments, accountFollowers, followerHistory, epis
         <h3 style={{ margin: "0 0 4px", fontSize: 14, color: BRAND.dark, fontFamily: "'Poppins', sans-serif" }}>
           Follower & Subscriber Growth
         </h3>
-        <p style={{ margin: "0 0 16px", fontSize: 10, color: BRAND.gray }}>
-          Tracked over time · episode drops marked below
+        <p style={{ margin: "0 0 12px", fontSize: 10, color: BRAND.gray }}>
+          Tracked over time
         </p>
+
+        {/* Episode drop labels - above chart */}
+        {episodeDates.length > 0 && (
+          <div style={{ marginBottom: 14, display: "flex", gap: 10, flexWrap: "wrap" }}>
+            {episodeDates.map(function(ep) {
+              var dateStr = new Date(ep.date + "T12:00:00").toLocaleDateString("en-US", { month: "long", day: "numeric" });
+              return (
+                <div key={ep.name} style={{
+                  display: "inline-flex", alignItems: "center", gap: 6,
+                  fontSize: 11, color: BRAND.dark, fontWeight: 600,
+                  background: "linear-gradient(135deg, " + BRAND.teal + "15, " + BRAND.magenta + "15)",
+                  padding: "6px 14px", borderRadius: 20,
+                  border: "1px solid " + BRAND.border
+                }}>
+                  <span style={{ color: BRAND.purple }}>📌</span>
+                  <span>{ep.name} Episode Drop — {dateStr}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
         {chartData.length >= 1 ? (
           <ResponsiveContainer width="100%" height={340}>
             <LineChart data={chartData} margin={{ top: 10, right: 20, left: 0, bottom: 10 }}>
@@ -317,28 +336,6 @@ function DashboardTab({ posts, comments, accountFollowers, followerHistory, epis
         ) : (
           <div style={{ textAlign: "center", padding: 40, color: BRAND.gray }}>
             <p style={{ fontSize: 13 }}>Scrape to start tracking growth.</p>
-          </div>
-        )}
-
-        {episodeDates.length > 0 && (
-          <div style={{ marginTop: 16, display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "center" }}>
-            {episodeDates.map(function(ep) {
-              var dateStr = new Date(ep.date + "T12:00:00").toLocaleDateString("en-US", { month: "long", day: "numeric" });
-              return (
-                <div key={ep.name} style={{
-                  display: "inline-flex", alignItems: "center", gap: 6,
-                  fontSize: 11, color: BRAND.dark, fontWeight: 600,
-                  background: "linear-gradient(135deg, " + BRAND.teal + "15, " + BRAND.magenta + "15)",
-                  padding: "6px 14px", borderRadius: 20,
-                  border: "1px solid " + BRAND.border
-                }}>
-                  <span style={{ color: BRAND.purple }}>📌</span>
-                  <span>{ep.name} Episode Drop</span>
-                  <span style={{ color: BRAND.gray, fontWeight: 400 }}>—</span>
-                  <span style={{ color: BRAND.gray, fontWeight: 400 }}>{dateStr}</span>
-                </div>
-              );
-            })}
           </div>
         )}
       </div>
@@ -436,44 +433,59 @@ function PostsTab({ posts, filterPlatform, setFilterPlatform, filterEpisode, set
 function CommentsTab({ comments, posts }) {
   const [filter, setFilter] = useState("all");
   const filtered = comments.filter(c => filter === "all" || c.sentiment === filter)
-    .sort((a, b) => (b.sentiment === "negative" ? 1 : 0) - (a.sentiment === "negative" ? 1 : 0));
-  const postMap = Object.fromEntries(posts.map(p => [p.id, p]));
+    .sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+
   return (
     <div style={{ padding: 24 }}>
-      <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
+      <h3 style={{ margin: "0 0 4px", fontSize: 14, color: BRAND.dark, fontFamily: "'Poppins', sans-serif" }}>YouTube Comments</h3>
+      <p style={{ margin: "0 0 16px", fontSize: 10, color: BRAND.gray }}>{comments.length} comments collected from all YouTube videos</p>
+
+      <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap" }}>
         {["all", "positive", "neutral", "negative"].map(s => (
           <button key={s} onClick={() => setFilter(s)} style={{
-            background: filter === s ? (s === "all" ? `${BRAND.teal}15` : `${SENTIMENT_COLORS[s]}18`) : BRAND.white,
-            border: `1px solid ${filter === s ? (s === "all" ? BRAND.teal : SENTIMENT_COLORS[s]) : BRAND.border}`,
-            color: filter === s ? (s === "all" ? BRAND.dark : (s === "neutral" ? "#B8860B" : SENTIMENT_COLORS[s])) : BRAND.gray,
+            background: filter === s ? (s === "all" ? BRAND.teal + "15" : (SENTIMENT_COLORS[s] || "#999") + "18") : BRAND.white,
+            border: "1px solid " + (filter === s ? (s === "all" ? BRAND.teal : (SENTIMENT_COLORS[s] || "#999")) : BRAND.border),
+            color: filter === s ? (s === "all" ? BRAND.dark : (s === "neutral" ? "#B8860B" : (SENTIMENT_COLORS[s] || "#999"))) : BRAND.gray,
             padding: "5px 12px", borderRadius: 16, cursor: "pointer", fontSize: 11, fontWeight: 600, textTransform: "capitalize"
           }}>{s === "negative" ? "⚑ " : ""}{s} ({s === "all" ? comments.length : comments.filter(c => c.sentiment === s).length})</button>
         ))}
       </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-        {filtered.map((c, i) => {
-          const post = postMap[c.postId];
-          return (
-            <div key={i} style={{
-              background: c.sentiment === "negative" ? "#FFF5F5" : BRAND.white,
-              border: `1px solid ${c.sentiment === "negative" ? "#FFCCCC" : BRAND.border}`,
-              borderRadius: 8, padding: "12px 16px",
-              borderLeft: `3px solid ${SENTIMENT_COLORS[c.sentiment] || SENTIMENT_COLORS.neutral}`
-            }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 }}>
-                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                  {post && <PlatformBadge platform={post.platform} />}
-                  <span style={{ fontSize: 10, color: BRAND.gray }}>{post?.title?.slice(0, 40) || "Unknown"}...</span>
-                </div>
-                <SentimentBadge sentiment={c.sentiment} />
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {filtered.map((c, i) => (
+          <div key={i} style={{
+            background: c.sentiment === "negative" ? "#FFF5F5" : BRAND.white,
+            border: "1px solid " + (c.sentiment === "negative" ? "#FFCCCC" : BRAND.border),
+            borderRadius: 8, padding: "14px 16px",
+            borderLeft: "3px solid " + (SENTIMENT_COLORS[c.sentiment] || SENTIMENT_COLORS.neutral)
+          }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <span style={{ fontSize: 9, color: BRAND.gray, textTransform: "uppercase", letterSpacing: 1, fontWeight: 600 }}>YouTube Comment</span>
+                <span style={{ fontSize: 9, color: BRAND.gray }}>·</span>
+                <span style={{ fontSize: 10, color: BRAND.gray }}>{c.postTitle ? c.postTitle.slice(0, 50) + (c.postTitle.length > 50 ? "..." : "") : "Unknown"}</span>
               </div>
-              <p style={{ margin: 0, fontSize: 12, color: BRAND.dark, lineHeight: 1.5 }}>"{c.text}"</p>
-              <span style={{ fontSize: 9, color: BRAND.gray, marginTop: 4, display: "block" }}>
-                {c.author && `@${c.author} · `}{c.date ? new Date(c.date).toLocaleDateString() : ""}
-              </span>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{
+                  fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5,
+                  color: SENTIMENT_COLORS[c.sentiment] || "#999",
+                  background: (SENTIMENT_COLORS[c.sentiment] || "#999") + "15",
+                  padding: "2px 8px", borderRadius: 10
+                }}>Sentiment: {c.sentiment}</span>
+              </div>
             </div>
-          );
-        })}
+            <p style={{ margin: "0 0 6px", fontSize: 13, color: BRAND.dark, lineHeight: 1.5 }}>{c.text}</p>
+            <div style={{ display: "flex", gap: 10, fontSize: 10, color: BRAND.gray }}>
+              <span style={{ fontWeight: 600 }}>{c.author}</span>
+              <span>{c.date}</span>
+              {c.score !== undefined && <span>confidence: {Math.round((c.score || 0) * 100)}%</span>}
+            </div>
+          </div>
+        ))}
+        {filtered.length === 0 && (
+          <div style={{ textAlign: "center", padding: 40, color: BRAND.gray }}>
+            <p>No comments match this filter.</p>
+          </div>
+        )}
       </div>
     </div>
   );

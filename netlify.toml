@@ -8,4 +8,4 @@
   external_node_modules = ["node-fetch"]
 
 [functions."scrape"]
-  timeout = 60
+  timeout = 55

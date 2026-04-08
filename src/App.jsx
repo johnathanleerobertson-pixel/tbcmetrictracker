@@ -211,212 +211,140 @@ function SentimentBadge({ sentiment }) {
   );
 }
 
-function DashboardTab({ posts: allPosts, comments: allComments }) {
-  const episodes = useMemo(() => {
-    const epMap = {};
-    allPosts.forEach(p => {
-      const ep = p.episode || "Uncategorized";
-      if (!epMap[ep]) epMap[ep] = { name: ep, latestDate: p.date, postCount: 0 };
-      epMap[ep].postCount++;
-      if (p.date > epMap[ep].latestDate) epMap[ep].latestDate = p.date;
-    });
-    return Object.values(epMap).sort((a, b) => b.latestDate.localeCompare(a.latestDate));
-  }, [allPosts]);
+function DashboardTab({ posts, comments, accountFollowers, followerHistory, episodes }) {
+  var af = accountFollowers || {};
+  var history = followerHistory || [];
 
-  const mostRecent = episodes.length > 0 ? episodes[0].name : null;
-  // selectedEps: Set of episode names toggled ON. null = show all (default).
-  const [selectedEps, setSelectedEps] = useState(null); // null = all
-
-  const toggleEp = (name) => {
-    setSelectedEps(prev => {
-      if (prev === null) {
-        // Coming from "All" → select only this one
-        return new Set([name]);
-      }
-      const next = new Set(prev);
-      if (next.has(name)) {
-        next.delete(name);
-        // If nothing left, go back to "All"
-        return next.size === 0 ? null : next;
-      } else {
-        next.add(name);
-        return next;
-      }
-    });
+  var ACCOUNT_COLORS = {
+    youtube: "#FF0000",
+    instagram: "#E1306C",
+    tiktok: "#010101",
+    instagram_hosts: "#C13584"
   };
-  const selectAll = () => setSelectedEps(null);
 
-  // Filter logic
-  const posts = selectedEps === null
-    ? allPosts
-    : allPosts.filter(p => selectedEps.has(p.episode || "Uncategorized"));
-  const postIds = new Set(posts.map(p => p.id));
-  const comments = allComments.filter(c => postIds.has(c.postId));
-
-  const totalLikes = posts.reduce((s, p) => s + (p.likes || 0), 0);
-  const totalComments = posts.reduce((s, p) => s + (p.commentCount || 0), 0);
-  const totalViews = posts.reduce((s, p) => s + (p.views || 0), 0);
-  const neg = comments.filter(c => c.sentiment === "negative").length;
-  const pos = comments.filter(c => c.sentiment === "positive").length;
-  const neu = comments.filter(c => c.sentiment === "neutral").length;
-  const sentimentData = [
-    { name: "Positive", value: pos, color: SENTIMENT_COLORS.positive },
-    { name: "Neutral", value: neu, color: SENTIMENT_COLORS.neutral },
-    { name: "Negative", value: neg, color: SENTIMENT_COLORS.negative },
-  ].filter(d => d.value > 0);
-  const platformData = (() => {
-    const merged = {};
-    posts.forEach(p => {
-      const name = p.platform === "instagram_hosts" ? "Instagram" : PLATFORMS[p.platform];
-      const color = p.platform === "youtube" ? "#FF0000" : p.platform === "tiktok" ? "#010101" : "#E1306C";
-      if (!merged[name]) merged[name] = { name, posts: 0, likes: 0, color };
-      merged[name].posts += 1;
-      merged[name].likes += p.likes || 0;
-    });
-    return Object.values(merged).filter(d => d.posts > 0);
-  })();
-
-  const totalFollowerGain = posts.reduce((s, p) => s + (p.followerGain || 0), 0);
-  const followerGainData = (() => {
-    const m = {};
-    posts.forEach(p => {
-      const name = p.platform === "instagram_hosts" ? "IG (Hosts)" : PLATFORMS[p.platform];
-      const color = p.platform === "youtube" ? "#FF0000" : p.platform === "tiktok" ? "#010101" : "#E1306C";
-      if (!m[name]) m[name] = { name, gain: 0, color };
-      m[name].gain += p.followerGain || 0;
-    });
-    return Object.values(m).filter(d => d.gain > 0);
-  })();
-
-  const ttStyle = { background: BRAND.white, border: `1px solid ${BRAND.border}`, borderRadius: 8, color: BRAND.dark, fontSize: 11, boxShadow: "0 2px 8px rgba(0,0,0,.08)" };
-
-  // Label for current selection
-  const currentLabel = selectedEps === null
-    ? "All Episodes"
-    : [...selectedEps].join(", ");
-
-  const isEpActive = (name) => {
-    if (selectedEps === null) return false;
-    return selectedEps.has(name);
+  var ACCOUNT_LABELS = {
+    youtube: "YouTube Subscribers",
+    instagram: "Instagram Followers",
+    tiktok: "TikTok Followers",
+    instagram_hosts: "IG Hosts Followers"
   };
-  const isAllActive = selectedEps === null;
+
+  var ACCOUNT_ICONS = {
+    youtube: "▶",
+    instagram: "📷",
+    tiktok: "♪",
+    instagram_hosts: "👯"
+  };
+
+  // Episode dates for reference lines
+  var episodeDates = (episodes || []).filter(function(ep) { return ep.date; });
+
+  // Build chart data
+  var chartData = history.map(function(h) {
+    return {
+      date: h.date,
+      label: new Date(h.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+      YouTube: h.youtube || 0,
+      Instagram: h.instagram || 0,
+      TikTok: h.tiktok || 0,
+      "IG Hosts": h.instagram_hosts || 0
+    };
+  }).sort(function(a, b) { return new Date(a.date) - new Date(b.date); });
+
+  var ttStyle = { background: BRAND.white, border: "1px solid " + BRAND.border, borderRadius: 8, color: BRAND.dark, fontSize: 11, boxShadow: "0 2px 8px rgba(0,0,0,.08)" };
+
+  if (!posts.length && !af.youtube && !af.instagram) {
+    return (
+      <div style={{ textAlign: "center", padding: 60, color: BRAND.gray }}>
+        <p style={{ fontSize: 48 }}>📊</p>
+        <p style={{ fontFamily: "'Poppins', sans-serif", color: BRAND.dark, fontSize: 16, marginBottom: 4 }}>No data yet</p>
+        <p style={{ fontSize: 13 }}>Click <strong>"⟳ Scrape Now To Refresh"</strong> above to pull real metrics from your social accounts.</p>
+      </div>
+    );
+  }
 
   return (
-    <div style={{ padding: 24 }}>
-
-      {/* Episode multi-select */}
-      <div style={{ marginBottom: 20 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-          <span style={{ fontSize: 12, fontWeight: 700, color: BRAND.dark, fontFamily: "'Poppins', sans-serif" }}>Episodes</span>
-          <span style={{ fontSize: 10, color: BRAND.gray }}>·</span>
-          <span style={{ fontSize: 10, color: BRAND.gray }}>click to toggle · select multiple</span>
-        </div>
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-          <button onClick={selectAll} style={{
-            background: isAllActive ? BRAND.dark : BRAND.white,
-            color: isAllActive ? "#fff" : BRAND.gray,
-            border: `1px solid ${isAllActive ? BRAND.dark : BRAND.border}`,
-            padding: "6px 14px", borderRadius: 20, cursor: "pointer",
-            fontSize: 11, fontWeight: 600, fontFamily: "'Poppins', sans-serif",
-            transition: "all .15s"
-          }}>All</button>
-
-          {episodes.map(ep => {
-            const active = isEpActive(ep.name);
-            return (
-              <button key={ep.name} onClick={() => toggleEp(ep.name)} style={{
-                background: active
-                  ? `linear-gradient(135deg, ${BRAND.teal}, ${BRAND.magenta})`
-                  : BRAND.white,
-                color: active ? "#fff" : BRAND.dark,
-                border: `1px solid ${active ? "transparent" : BRAND.border}`,
-                padding: "6px 14px", borderRadius: 20, cursor: "pointer",
-                fontSize: 11, fontWeight: 600, fontFamily: "'Poppins', sans-serif",
-                transition: "all .15s",
-                boxShadow: active ? `0 2px 8px ${BRAND.magenta}30` : "none"
-              }}>
-                {ep.name}
-                <span style={{
-                  marginLeft: 6, fontSize: 9, opacity: 0.7,
-                  background: active ? "rgba(255,255,255,.25)" : `${BRAND.teal}15`,
-                  padding: "1px 5px", borderRadius: 8
-                }}>{ep.postCount}</span>
-              </button>
-            );
-          })}
-        </div>
+    <div style={{ padding: "clamp(12px, 3vw, 24px)" }}>
+      {/* Follower/Subscriber KPI Cards */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 24 }}>
+        {["youtube", "instagram", "tiktok", "instagram_hosts"].map(function(key) {
+          var count = af[key] || 0;
+          return (
+            <div key={key} style={{
+              background: BRAND.white, borderRadius: 12, padding: "18px 16px",
+              border: "1px solid " + BRAND.border, boxShadow: "0 1px 4px rgba(0,0,0,.04)",
+              position: "relative", overflow: "hidden"
+            }}>
+              <div style={{ position: "absolute", top: 10, right: 12, fontSize: 22, opacity: 0.15 }}>{ACCOUNT_ICONS[key]}</div>
+              <p style={{ margin: 0, fontSize: 10, color: BRAND.gray, textTransform: "uppercase", letterSpacing: 1.5, fontWeight: 600 }}>
+                {ACCOUNT_LABELS[key]}
+              </p>
+              <p style={{ margin: "6px 0 0", fontSize: 28, fontWeight: 800, color: ACCOUNT_COLORS[key], fontFamily: "'Poppins', sans-serif" }}>
+                {count.toLocaleString()}
+              </p>
+            </div>
+          );
+        })}
       </div>
 
-      {/* KPI cards */}
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 14, marginBottom: 24 }}>
-        <KPICard label="Posts" value={posts.length} sub={currentLabel} icon="▤" color={BRAND.purple} />
-        <KPICard label="Likes" value={totalLikes.toLocaleString()} icon="♥" color={BRAND.magenta} />
-        <KPICard label="Comments" value={totalComments.toLocaleString()} sub="across posts" icon="💬" color={BRAND.teal} />
-        <KPICard label="Views" value={totalViews.toLocaleString()} icon="◉" color={BRAND.purple} />
-        <KPICard label="Tracked" value={comments.length} sub={`${neg} flagged`} icon="📋" color={neg > 0 ? "#FF6B6B" : BRAND.teal} />
-        <KPICard label="New Followers" value={`+${totalFollowerGain.toLocaleString()}`} sub="since posted" icon="👥" color="#B07BAB" />
-      </div>
-
-      {/* Charts */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16 }}>
-        {sentimentData.length > 0 && (
-          <div style={{ background: BRAND.white, borderRadius: 12, border: `1px solid ${BRAND.border}`, padding: 20, boxShadow: "0 1px 4px rgba(0,0,0,.04)" }}>
-            <h3 style={{ margin: "0 0 14px", fontSize: 13, color: BRAND.dark, fontFamily: "'Poppins', sans-serif" }}>Sentiment</h3>
-            <ResponsiveContainer width="100%" height={200}>
-              <PieChart>
-                <Pie data={sentimentData} cx="50%" cy="50%" innerRadius={45} outerRadius={75} dataKey="value" stroke={BRAND.white} strokeWidth={2}>
-                  {sentimentData.map((d, i) => <Cell key={i} fill={d.color} />)}
-                </Pie>
-                <Tooltip contentStyle={ttStyle} />
-                <Legend wrapperStyle={{ fontSize: 10, color: BRAND.gray }} />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-        )}
-        {platformData.length > 0 && (
-          <div style={{ background: BRAND.white, borderRadius: 12, border: `1px solid ${BRAND.border}`, padding: 20, boxShadow: "0 1px 4px rgba(0,0,0,.04)" }}>
-            <h3 style={{ margin: "0 0 14px", fontSize: 13, color: BRAND.dark, fontFamily: "'Poppins', sans-serif" }}>Likes by Platform</h3>
-            <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={platformData}>
-                <CartesianGrid strokeDasharray="3 3" stroke={BRAND.border} />
-                <XAxis dataKey="name" tick={{ fill: BRAND.gray, fontSize: 10 }} axisLine={{ stroke: BRAND.border }} />
-                <YAxis tick={{ fill: BRAND.gray, fontSize: 10 }} axisLine={{ stroke: BRAND.border }} />
-                <Tooltip contentStyle={ttStyle} />
-                <Bar dataKey="likes" radius={[5, 5, 0, 0]}>
-                  {platformData.map((d, i) => <Cell key={i} fill={d.color} />)}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        )}
-      </div>
-
-      {/* Follower Growth by Platform */}
-      {followerGainData.length > 0 && (
-        <div style={{ background: BRAND.white, borderRadius: 12, border: `1px solid ${BRAND.border}`, padding: 20, marginTop: 16, boxShadow: "0 1px 4px rgba(0,0,0,.04)" }}>
-          <h3 style={{ margin: "0 0 4px", fontSize: 13, color: BRAND.dark, fontFamily: "'Poppins', sans-serif" }}>Follower Growth by Platform</h3>
-          <p style={{ margin: "0 0 14px", fontSize: 10, color: BRAND.gray }}>New followers gained since {currentLabel} posted</p>
-          <ResponsiveContainer width="100%" height={220}>
-            <BarChart data={followerGainData} layout="vertical" margin={{ left: 10 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke={BRAND.border} horizontal={false} />
-              <XAxis type="number" tick={{ fill: BRAND.gray, fontSize: 10 }} axisLine={{ stroke: BRAND.border }} />
-              <YAxis type="category" dataKey="name" tick={{ fill: BRAND.dark, fontSize: 11, fontWeight: 600 }} axisLine={{ stroke: BRAND.border }} width={80} />
-              <Tooltip contentStyle={ttStyle} formatter={(v) => [`+${v.toLocaleString()}`, "Followers"]} />
-              <Bar dataKey="gain" radius={[0, 5, 5, 0]} barSize={24}>
-                {followerGainData.map((d, i) => <Cell key={i} fill={d.color} />)}
-              </Bar>
-            </BarChart>
+      {/* Follower Growth Line Chart */}
+      <div style={{
+        background: BRAND.white, borderRadius: 12, padding: 20,
+        border: "1px solid " + BRAND.border, boxShadow: "0 1px 4px rgba(0,0,0,.04)"
+      }}>
+        <h3 style={{ margin: "0 0 4px", fontSize: 14, color: BRAND.dark, fontFamily: "'Poppins', sans-serif" }}>
+          Follower & Subscriber Growth
+        </h3>
+        <p style={{ margin: "0 0 16px", fontSize: 10, color: BRAND.gray }}>
+          Tracked over time · episode drops marked on timeline
+        </p>
+        {chartData.length > 1 ? (
+          <ResponsiveContainer width="100%" height={320}>
+            <LineChart data={chartData} margin={{ top: 10, right: 20, left: 0, bottom: 20 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke={BRAND.border} />
+              <XAxis dataKey="label" tick={{ fill: BRAND.gray, fontSize: 10 }} axisLine={{ stroke: BRAND.border }} />
+              <YAxis tick={{ fill: BRAND.gray, fontSize: 10 }} axisLine={{ stroke: BRAND.border }} />
+              <Tooltip contentStyle={ttStyle} />
+              <Legend wrapperStyle={{ fontSize: 11 }} />
+              <Line type="monotone" dataKey="YouTube" stroke="#FF0000" strokeWidth={2} dot={{ r: 3 }} />
+              <Line type="monotone" dataKey="Instagram" stroke="#E1306C" strokeWidth={2} dot={{ r: 3 }} />
+              <Line type="monotone" dataKey="TikTok" stroke="#010101" strokeWidth={2} dot={{ r: 3 }} />
+              <Line type="monotone" dataKey="IG Hosts" stroke="#C13584" strokeWidth={2} dot={{ r: 3 }} />
+              {episodeDates.map(function(ep) {
+                var matchIdx = chartData.findIndex(function(d) { return d.date === ep.date; });
+                if (matchIdx >= 0) {
+                  return null; // ReferenceLine would need import, we handle via custom label below
+                }
+                return null;
+              })}
+            </LineChart>
           </ResponsiveContainer>
-        </div>
-      )}
+        ) : (
+          <div style={{ textAlign: "center", padding: 40, color: BRAND.gray }}>
+            <p style={{ fontSize: 13 }}>Growth chart will appear after multiple scrapes over different days.</p>
+            <p style={{ fontSize: 11, marginTop: 4 }}>Each time you scrape, a data point is recorded. Come back tomorrow and scrape again to see the trend.</p>
+          </div>
+        )}
 
-      {posts.length === 0 && (
-        <div style={{ textAlign: "center", padding: 60, color: BRAND.gray }}>
-          <p style={{ fontSize: 48 }}>📊</p>
-          <p style={{ fontFamily: "'Poppins', sans-serif", color: BRAND.dark, fontSize: 16, marginBottom: 4 }}>No data yet</p>
-          <p style={{ fontSize: 13 }}>Click <strong>"⟳ Scrape Now To Refresh"</strong> above to pull real metrics from your social accounts.</p>
-        </div>
-      )}
+        {/* Episode timeline markers */}
+        {episodeDates.length > 0 && (
+          <div style={{ marginTop: 12, display: "flex", gap: 12, flexWrap: "wrap", justifyContent: "center" }}>
+            {episodeDates.map(function(ep) {
+              return (
+                <div key={ep.name} style={{
+                  display: "flex", alignItems: "center", gap: 4,
+                  fontSize: 10, color: BRAND.gray,
+                  background: BRAND.lightGray, padding: "3px 10px", borderRadius: 12
+                }}>
+                  <span style={{ color: BRAND.purple, fontWeight: 700 }}>📌 {ep.name}</span>
+                  <span>·</span>
+                  <span>{new Date(ep.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -722,7 +650,7 @@ export default function App() {
         </div>
       </div>
       <Header activeTab={tab} setActiveTab={setTab} lastUpdated={data.lastUpdated} onScrape={handleScrape} scraping={scraping} />
-      {tab === "dashboard" && <DashboardTab posts={data.posts} comments={data.comments} />}
+      {tab === "dashboard" && <DashboardTab posts={data.posts} comments={data.comments} accountFollowers={data.accountFollowers} followerHistory={data.followerHistory} episodes={data.episodes} />}
       {tab === "posts" && <PostsTab posts={data.posts} filterPlatform={fp} setFilterPlatform={setFp} filterEpisode={fe} setFilterEpisode={setFe} episodes={episodes} />}
       {tab === "comments" && <CommentsTab comments={data.comments} posts={data.posts} />}
       {tab === "trends" && <TrendsTab posts={data.posts} />}

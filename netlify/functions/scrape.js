@@ -22,6 +22,28 @@ exports.handler = async (event) => {
     }
 
     try {
+      // Step 1: Fetch actual pages directly
+      const pages = {};
+      const urls = [
+        { key: "website", url: "https://twobecontinuedhq.com" },
+        { key: "youtube", url: "https://www.youtube.com/@twobecontinuedhq" },
+        { key: "tiktok", url: "https://www.tiktok.com/@twobecontinuedhq" }
+      ];
+
+      for (const u of urls) {
+        try {
+          const r = await fetch(u.url, { 
+            headers: { "User-Agent": "Mozilla/5.0 (compatible; bot)" },
+            timeout: 5000 
+          });
+          const text = await r.text();
+          pages[u.key] = text.substring(0, 3000);
+        } catch (e) {
+          pages[u.key] = "Failed to fetch: " + e.message;
+        }
+      }
+
+      // Step 2: Send page content to Claude for parsing (no web search = fast)
       const response = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: {
@@ -31,11 +53,10 @@ exports.handler = async (event) => {
         },
         body: JSON.stringify({
           model: "claude-sonnet-4-20250514",
-          max_tokens: 8000,
-          tools: [{ type: "web_search_20250305", name: "web_search" }],
+          max_tokens: 4000,
           messages: [{
             role: "user",
-            content: "Search the web for: \"two be continued\" podcast Delaney Hadley Robertson 2026\n\nThen search for: twobecontinuedhq.com\n\nThen search for: itsdelaneyandhadley instagram\n\nThese are real, public, recently created social media accounts for a new podcast by twin sisters Delaney and Hadley Robertson. Episode 1 features Stringys co-founders Olivia Karina and Elvira Novek Troger.\n\nReport any social media posts, videos, follower counts, likes, views, and comments you find for their YouTube, Instagram, TikTok, and the hosts personal Instagram.\n\nReturn ONLY valid JSON (no markdown, no explanation before or after):\n{\"posts\":[{\"title\":\"...\",\"platform\":\"youtube|instagram|tiktok|instagram_hosts\",\"episode\":\"Episode 1|Trailer|Promo\",\"date\":\"YYYY-MM-DD\",\"likes\":0,\"commentCount\":0,\"views\":0,\"followerGain\":0}],\"comments\":[],\"accountFollowers\":{\"instagram\":0,\"youtube\":0,\"tiktok\":0,\"instagram_hosts\":0}}"
+            content: "I fetched these pages for the \"Two Be Continued\" podcast by Delaney & Hadley Robertson. Extract any social media metrics you can find (video titles, view counts, likes, comments, follower counts, subscriber counts, dates). If a page failed to load or has no useful data, skip it.\n\nWEBSITE (twobecontinuedhq.com):\n" + pages.website + "\n\nYOUTUBE (@twobecontinuedhq):\n" + pages.youtube + "\n\nTIKTOK (@twobecontinuedhq):\n" + pages.tiktok + "\n\nReturn ONLY valid JSON (no markdown, no explanation):\n{\"posts\":[{\"title\":\"...\",\"platform\":\"youtube|instagram|tiktok|instagram_hosts\",\"episode\":\"Episode 1|Trailer|Promo\",\"date\":\"YYYY-MM-DD\",\"likes\":0,\"commentCount\":0,\"views\":0,\"followerGain\":0}],\"comments\":[],\"accountFollowers\":{\"instagram\":0,\"youtube\":0,\"tiktok\":0,\"instagram_hosts\":0}}"
           }]
         })
       });
@@ -43,20 +64,55 @@ exports.handler = async (event) => {
       const apiData = await response.json();
 
       if (apiData.error) {
-        return { statusCode: 200, headers, body: JSON.stringify({ error: apiData.error.message || "API error" }) };
+        return { statusCode: 200, headers, body: JSON.stringify({ error: apiData.error.message, debug: "api_error" }) };
       }
 
       const allContent = apiData.content || [];
       const texts = allContent.filter(b => b.type === "text").map(b => b.text).join("\n");
 
-      if (!texts || texts.trim().length === 0) {
-        return { statusCode: 200, headers, body: JSON.stringify({ error: "No text response" }) };
+      if (!texts) {
+        return { statusCode: 200, headers, body: JSON.stringify({ error: "No text", debug: "empty", fetchResults: Object.keys(pages).map(k => k + ": " + pages[k].substring(0, 100)) }) };
       }
 
       const jsonMatch = texts.match(/\{[\s\S]*"posts"[\s\S]*\}/);
 
       if (!jsonMatch) {
-        return { statusCode: 200, headers, body: JSON.stringify({ error: "No JSON found", rawText: texts.substring(0, 2000) }) };
+        return { statusCode: 200, headers, body: JSON.stringify({ error: "No JSON", debugRaw: texts.substring(0, 2000) }) };
       }
 
-      let scr
+      let scraped;
+      try {
+        scraped = JSON.parse(jsonMatch[0].replace(/```json|```/g, "").trim());
+      } catch (e) {
+        return { statusCode: 200, headers, body: JSON.stringify({ error: "Parse failed", rawText: jsonMatch[0].substring(0, 1000) }) };
+      }
+
+      scraped.posts = (scraped.posts || []).map(p => ({
+        ...p,
+        id: Date.now().toString(36) + Math.random().toString(36).slice(2, 7)
+      }));
+
+      scraped.comments = (scraped.comments || []).map(c => ({
+        ...c,
+        id: Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
+        sentiment: "neutral",
+        score: 0.5
+      }));
+
+      const result = {
+        posts: scraped.posts,
+        comments: scraped.comments,
+        accountFollowers: scraped.accountFollowers || {},
+        lastUpdated: new Date().toISOString(),
+        lastScraped: new Date().toISOString(),
+        debugRaw: texts.substring(0, 1000)
+      };
+
+      return { statusCode: 200, headers, body: JSON.stringify(result) };
+    } catch (e) {
+      return { statusCode: 200, headers, body: JSON.stringify({ error: e.message, debug: "catch" }) };
+    }
+  }
+
+  return { statusCode: 405, headers, body: "Method not allowed" };
+};

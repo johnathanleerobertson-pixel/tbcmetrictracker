@@ -26,7 +26,8 @@ const PLATFORM_COLORS = {
   youtube: "#FF0000",
   instagram: "#E1306C",
   tiktok: "#010101",
-  instagram_hosts: "#E1306C"
+  instagram_hosts: "#E1306C",
+  tiktok_hosts: "#010101"
 };
 // SVG platform logos as inline components
 const PlatformLogo = ({ platform, size = 14 }) => {
@@ -36,7 +37,7 @@ const PlatformLogo = ({ platform, size = 14 }) => {
   if (platform === "instagram" || platform === "instagram_hosts") return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none"><defs><linearGradient id={"ig" + size} x1="0" y1="24" x2="24" y2="0"><stop stopColor="#FFDC80"/><stop offset=".25" stopColor="#F77737"/><stop offset=".5" stopColor="#E1306C"/><stop offset=".75" stopColor="#C13584"/><stop offset="1" stopColor="#833AB4"/></linearGradient></defs><rect width="24" height="24" rx="6" fill={"url(#ig" + size + ")"}/><rect x="5" y="5" width="14" height="14" rx="4" stroke="#fff" strokeWidth="1.5" fill="none"/><circle cx="12" cy="12" r="3.5" stroke="#fff" strokeWidth="1.5" fill="none"/><circle cx="17" cy="7" r="1" fill="#fff"/></svg>
   );
-  if (platform === "tiktok") return (
+  if (platform === "tiktok" || platform === "tiktok_hosts") return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none"><rect width="24" height="24" rx="6" fill="#fff"/><path d="M16.5 4.5c-.2 1.8 1 3.3 2.5 3.7v2.5c-1.3 0-2.5-.5-3.5-1.2v5.5c0 3-2.5 5-5 4.5-1.7-.3-3-1.7-3.3-3.4-.5-2.5 1.3-4.8 3.8-5v2.5c-1 .2-1.7 1.1-1.5 2.1.2.8.9 1.4 1.8 1.4 1.1 0 1.9-.8 1.9-1.9V4.5h2.3z" fill="#25F4EE"/><path d="M17 4.5c-.2 1.8 1 3.3 2.5 3.7v2.5c-1.3 0-2.5-.5-3.5-1.2v5.5c0 3-2.5 5-5 4.5-1.7-.3-3-1.7-3.3-3.4-.5-2.5 1.3-4.8 3.8-5v2.5c-1 .2-1.7 1.1-1.5 2.1.2.8.9 1.4 1.8 1.4 1.1 0 1.9-.8 1.9-1.9V4.5H17z" fill="#FE2C55" opacity=".7"/></svg>
   );
   return null;
@@ -52,6 +53,7 @@ const ACCOUNTS = [
   { platform: "youtube", handle: "@twobecontinuedhq", url: "https://www.youtube.com/@twobecontinuedhq" },
   { platform: "tiktok", handle: "@twobecontinuedhq", url: "https://www.tiktok.com/@twobecontinuedhq" },
   { platform: "instagram_hosts", handle: "@itsdelaneyandhadley", url: "https://www.instagram.com/itsdelaneyandhadley" },
+  { platform: "tiktok_hosts", handle: "@itsdelaneyandhadley", url: "https://www.tiktok.com/@itsdelaneyandhadley" },
 ];
 
 function genId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
@@ -118,7 +120,7 @@ function Header({ activeTab, setActiveTab, lastUpdated, onScrape, scraping }) {
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "10px 12px", gap: 6, flexWrap: "wrap" }}>
         {ACCOUNTS.map(a => {
           const pillBg = a.platform === "youtube" ? "#FF0000"
-            : a.platform === "tiktok" ? "#010101"
+            : (a.platform === "tiktok" || a.platform === "tiktok_hosts") ? "#010101"
             : a.platform === "instagram_hosts" ? "linear-gradient(45deg, #F58529, #DD2A7B, #8134AF, #515BD4)"
             : "linear-gradient(45deg, #F58529, #DD2A7B, #8134AF, #515BD4)";
           return (
@@ -184,9 +186,9 @@ function KPICard({ label, value, sub, color, icon }) {
 
 function PlatformBadge({ platform }) {
   const bg = platform === "youtube" ? "#FF0000"
-    : platform === "tiktok" ? "#010101"
+    : (platform === "tiktok" || platform === "tiktok_hosts") ? "#010101"
     : (platform === "instagram" || platform === "instagram_hosts") ? "linear-gradient(45deg, #F58529, #DD2A7B, #8134AF)" : "#999";
-  const label = platform === "instagram_hosts" ? "Hosts" : PLATFORMS[platform];
+  const label = platform === "instagram_hosts" ? "IG Hosts" : platform === "tiktok_hosts" ? "TT Hosts" : PLATFORMS[platform];
   return (
     <span style={{
       display: "inline-flex", alignItems: "center", gap: 5,
@@ -215,39 +217,25 @@ function DashboardTab({ posts, comments, accountFollowers, followerHistory, epis
   var af = accountFollowers || {};
   var history = followerHistory || [];
 
-  var ACCOUNT_COLORS = {
-    youtube: "#FF0000",
-    instagram: "#E1306C",
-    tiktok: "#010101",
-    instagram_hosts: "#C13584"
-  };
+  var ACCOUNTS_CONFIG = [
+    { key: "youtube", label: "YouTube Subscribers", icon: "▶", color: "#FF0000", handle: "@twobecontinuedhq" },
+    { key: "instagram", label: "IG Followers", icon: "📷", color: "#E1306C", handle: "@twobecontinuedhq" },
+    { key: "tiktok", label: "TikTok Followers", icon: "♪", color: "#010101", handle: "@twobecontinuedhq" },
+    { key: "instagram_hosts", label: "IG Followers", icon: "📷", color: "#C13584", handle: "@itsdelaneyandhadley" },
+    { key: "tiktok_hosts", label: "TikTok Followers", icon: "♪", color: "#555", handle: "@itsdelaneyandhadley" }
+  ];
 
-  var ACCOUNT_LABELS = {
-    youtube: "YouTube Subscribers",
-    instagram: "Instagram Followers",
-    tiktok: "TikTok Followers",
-    instagram_hosts: "IG Hosts Followers"
-  };
-
-  var ACCOUNT_ICONS = {
-    youtube: "▶",
-    instagram: "📷",
-    tiktok: "♪",
-    instagram_hosts: "👯"
-  };
-
-  // Episode dates for reference lines
   var episodeDates = (episodes || []).filter(function(ep) { return ep.date; });
 
-  // Build chart data
   var chartData = history.map(function(h) {
     return {
       date: h.date,
       label: new Date(h.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }),
-      YouTube: h.youtube || 0,
-      Instagram: h.instagram || 0,
-      TikTok: h.tiktok || 0,
-      "IG Hosts": h.instagram_hosts || 0
+      "YT @twobecontinuedhq": h.youtube || 0,
+      "IG @twobecontinuedhq": h.instagram || 0,
+      "TT @twobecontinuedhq": h.tiktok || 0,
+      "IG @itsdelaneyandhadley": h.instagram_hosts || 0,
+      "TT @itsdelaneyandhadley": h.tiktok_hosts || 0
     };
   }).sort(function(a, b) { return new Date(a.date) - new Date(b.date); });
 
@@ -258,28 +246,26 @@ function DashboardTab({ posts, comments, accountFollowers, followerHistory, epis
       <div style={{ textAlign: "center", padding: 60, color: BRAND.gray }}>
         <p style={{ fontSize: 48 }}>📊</p>
         <p style={{ fontFamily: "'Poppins', sans-serif", color: BRAND.dark, fontSize: 16, marginBottom: 4 }}>No data yet</p>
-        <p style={{ fontSize: 13 }}>Click <strong>"⟳ Scrape Now To Refresh"</strong> above to pull real metrics from your social accounts.</p>
+        <p style={{ fontSize: 13 }}>Click <strong>"⟳ Scrape Now To Refresh"</strong> above to pull real metrics.</p>
       </div>
     );
   }
 
   return (
     <div style={{ padding: "clamp(12px, 3vw, 24px)" }}>
-      {/* Follower/Subscriber KPI Cards */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 24 }}>
-        {["youtube", "instagram", "tiktok", "instagram_hosts"].map(function(key) {
-          var count = af[key] || 0;
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10, marginBottom: 24 }}>
+        {ACCOUNTS_CONFIG.map(function(acct) {
+          var count = af[acct.key] || 0;
           return (
-            <div key={key} style={{
-              background: BRAND.white, borderRadius: 12, padding: "18px 16px",
+            <div key={acct.key} style={{
+              background: BRAND.white, borderRadius: 12, padding: "16px 14px",
               border: "1px solid " + BRAND.border, boxShadow: "0 1px 4px rgba(0,0,0,.04)",
               position: "relative", overflow: "hidden"
             }}>
-              <div style={{ position: "absolute", top: 10, right: 12, fontSize: 22, opacity: 0.15 }}>{ACCOUNT_ICONS[key]}</div>
-              <p style={{ margin: 0, fontSize: 10, color: BRAND.gray, textTransform: "uppercase", letterSpacing: 1.5, fontWeight: 600 }}>
-                {ACCOUNT_LABELS[key]}
-              </p>
-              <p style={{ margin: "6px 0 0", fontSize: 28, fontWeight: 800, color: ACCOUNT_COLORS[key], fontFamily: "'Poppins', sans-serif" }}>
+              <div style={{ position: "absolute", top: 8, right: 10, fontSize: 20, opacity: 0.12 }}>{acct.icon}</div>
+              <p style={{ margin: 0, fontSize: 9, color: BRAND.gray, textTransform: "uppercase", letterSpacing: 1.2, fontWeight: 600 }}>{acct.label}</p>
+              <p style={{ margin: "2px 0 0", fontSize: 10, color: acct.color, fontWeight: 500 }}>{acct.handle}</p>
+              <p style={{ margin: "6px 0 0", fontSize: 26, fontWeight: 800, color: acct.color, fontFamily: "'Poppins', sans-serif" }}>
                 {count.toLocaleString()}
               </p>
             </div>
@@ -287,7 +273,6 @@ function DashboardTab({ posts, comments, accountFollowers, followerHistory, epis
         })}
       </div>
 
-      {/* Follower Growth Line Chart */}
       <div style={{
         background: BRAND.white, borderRadius: 12, padding: 20,
         border: "1px solid " + BRAND.border, boxShadow: "0 1px 4px rgba(0,0,0,.04)"
@@ -296,45 +281,37 @@ function DashboardTab({ posts, comments, accountFollowers, followerHistory, epis
           Follower & Subscriber Growth
         </h3>
         <p style={{ margin: "0 0 16px", fontSize: 10, color: BRAND.gray }}>
-          Tracked over time · episode drops marked on timeline
+          Tracked over time · episode drops marked below
         </p>
-        {chartData.length > 1 ? (
-          <ResponsiveContainer width="100%" height={320}>
+        {chartData.length >= 1 ? (
+          <ResponsiveContainer width="100%" height={340}>
             <LineChart data={chartData} margin={{ top: 10, right: 20, left: 0, bottom: 20 }}>
               <CartesianGrid strokeDasharray="3 3" stroke={BRAND.border} />
               <XAxis dataKey="label" tick={{ fill: BRAND.gray, fontSize: 10 }} axisLine={{ stroke: BRAND.border }} />
               <YAxis tick={{ fill: BRAND.gray, fontSize: 10 }} axisLine={{ stroke: BRAND.border }} />
               <Tooltip contentStyle={ttStyle} />
-              <Legend wrapperStyle={{ fontSize: 11 }} />
-              <Line type="monotone" dataKey="YouTube" stroke="#FF0000" strokeWidth={2} dot={{ r: 3 }} />
-              <Line type="monotone" dataKey="Instagram" stroke="#E1306C" strokeWidth={2} dot={{ r: 3 }} />
-              <Line type="monotone" dataKey="TikTok" stroke="#010101" strokeWidth={2} dot={{ r: 3 }} />
-              <Line type="monotone" dataKey="IG Hosts" stroke="#C13584" strokeWidth={2} dot={{ r: 3 }} />
-              {episodeDates.map(function(ep) {
-                var matchIdx = chartData.findIndex(function(d) { return d.date === ep.date; });
-                if (matchIdx >= 0) {
-                  return null; // ReferenceLine would need import, we handle via custom label below
-                }
-                return null;
-              })}
+              <Legend wrapperStyle={{ fontSize: 10 }} />
+              <Line type="monotone" dataKey="YT @twobecontinuedhq" stroke="#FF0000" strokeWidth={2} dot={{ r: 3 }} />
+              <Line type="monotone" dataKey="IG @twobecontinuedhq" stroke="#E1306C" strokeWidth={2} dot={{ r: 3 }} />
+              <Line type="monotone" dataKey="TT @twobecontinuedhq" stroke="#010101" strokeWidth={2} dot={{ r: 3 }} />
+              <Line type="monotone" dataKey="IG @itsdelaneyandhadley" stroke="#C13584" strokeWidth={2} dot={{ r: 3 }} />
+              <Line type="monotone" dataKey="TT @itsdelaneyandhadley" stroke="#555555" strokeWidth={2} dot={{ r: 3 }} />
             </LineChart>
           </ResponsiveContainer>
         ) : (
           <div style={{ textAlign: "center", padding: 40, color: BRAND.gray }}>
-            <p style={{ fontSize: 13 }}>Growth chart will appear after multiple scrapes over different days.</p>
-            <p style={{ fontSize: 11, marginTop: 4 }}>Each time you scrape, a data point is recorded. Come back tomorrow and scrape again to see the trend.</p>
+            <p style={{ fontSize: 13 }}>Scrape to start tracking growth.</p>
           </div>
         )}
 
-        {/* Episode timeline markers */}
         {episodeDates.length > 0 && (
-          <div style={{ marginTop: 12, display: "flex", gap: 12, flexWrap: "wrap", justifyContent: "center" }}>
+          <div style={{ marginTop: 12, display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "center" }}>
             {episodeDates.map(function(ep) {
               return (
                 <div key={ep.name} style={{
                   display: "flex", alignItems: "center", gap: 4,
                   fontSize: 10, color: BRAND.gray,
-                  background: BRAND.lightGray, padding: "3px 10px", borderRadius: 12
+                  background: BRAND.lightGray, padding: "4px 12px", borderRadius: 12
                 }}>
                   <span style={{ color: BRAND.purple, fontWeight: 700 }}>📌 {ep.name}</span>
                   <span>·</span>

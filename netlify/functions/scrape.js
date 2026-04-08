@@ -6,6 +6,7 @@ var IG_ACCOUNT = "twobecontinuedhq";
 var IG_HOSTS_ACCOUNT = "itsdelaneyandhadley";
 var TIKTOK_ACCOUNT = "twobecontinuedhq";
 var STORAGE_KEY = "tbc-metrics-latest";
+var cachedData = null;
 
 function timeoutFetch(url, options, ms) {
   return Promise.race([
@@ -38,7 +39,8 @@ async function saveStored(data) {
   try {
     var store = getStore("tbc-data");
     await store.setJSON(STORAGE_KEY, data);
-  } catch (e) { console.log("Save error:", e.message); }
+    return null;
+  } catch (e) { return e.message; }
 }
 
 async function scrapeYouTube(ytKey) {
@@ -178,8 +180,10 @@ exports.handler = async (event) => {
   if (event.httpMethod === "OPTIONS") return { statusCode: 200, headers: headers, body: "" };
 
   if (event.httpMethod === "GET") {
+    if (cachedData) return { statusCode: 200, headers: headers, body: JSON.stringify(cachedData) };
     var stored = await loadStored();
-    return { statusCode: 200, headers: headers, body: JSON.stringify(stored || { posts: [], comments: [], lastUpdated: null }) };
+    if (stored) { cachedData = stored; return { statusCode: 200, headers: headers, body: JSON.stringify(stored) }; }
+    return { statusCode: 200, headers: headers, body: JSON.stringify({ posts: [], comments: [], lastUpdated: null }) };
   }
 
   if (event.httpMethod === "POST") {
@@ -209,7 +213,10 @@ exports.handler = async (event) => {
         debug: { yt: ytResult.posts.length, ig: igResult.posts.length, igH: igHostsResult.posts.length, tt: ttResult.posts.length }
       };
 
-      await saveStored(result);
+      cachedData = result;
+      var saveErr = await saveStored(result);
+      result.debug.saveError = saveErr;
+
       return { statusCode: 200, headers: headers, body: JSON.stringify(result) };
     } catch (e) {
       return { statusCode: 200, headers: headers, body: JSON.stringify({ error: e.message }) };

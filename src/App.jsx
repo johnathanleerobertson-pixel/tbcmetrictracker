@@ -227,17 +227,38 @@ function DashboardTab({ posts, comments, accountFollowers, followerHistory, epis
 
   var episodeDates = (episodes || []).filter(function(ep) { return ep.date; });
 
+  // Build chart data with episode markers
+  var epDateSet = {};
+  episodeDates.forEach(function(ep) { epDateSet[ep.date] = ep.name; });
+
   var chartData = history.map(function(h) {
+    var dateLabel = new Date(h.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    var epLabel = epDateSet[h.date];
     return {
       date: h.date,
-      label: new Date(h.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+      label: epLabel ? dateLabel + "\n" + epLabel + " Drop" : dateLabel,
       "YT @twobecontinuedhq": h.youtube || 0,
       "IG @twobecontinuedhq": h.instagram || 0,
       "TT @twobecontinuedhq": h.tiktok || 0,
       "IG @itsdelaneyandhadley": h.instagram_hosts || 0,
-      "TT @itsdelaneyandhadley": h.tiktok_hosts || 0
+      "TT @itsdelaneyandhadley": h.tiktok_hosts || 0,
+      isEpisodeDrop: !!epLabel
     };
   }).sort(function(a, b) { return new Date(a.date) - new Date(b.date); });
+
+  // Insert episode date as data point if not already in history
+  episodeDates.forEach(function(ep) {
+    var exists = chartData.some(function(d) { return d.date === ep.date; });
+    if (!exists) {
+      var dateLabel = new Date(ep.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
+      chartData.push({
+        date: ep.date,
+        label: dateLabel + "\n" + ep.name + " Drop",
+        isEpisodeDrop: true
+      });
+      chartData.sort(function(a, b) { return new Date(a.date) - new Date(b.date); });
+    }
+  });
 
   var ttStyle = { background: BRAND.white, border: "1px solid " + BRAND.border, borderRadius: 8, color: BRAND.dark, fontSize: 11, boxShadow: "0 2px 8px rgba(0,0,0,.08)" };
 
@@ -258,14 +279,14 @@ function DashboardTab({ posts, comments, accountFollowers, followerHistory, epis
           var count = af[acct.key] || 0;
           return (
             <div key={acct.key} style={{
-              background: BRAND.white, borderRadius: 12, padding: "16px 14px",
+              background: BRAND.white, borderRadius: 12, padding: "18px 16px",
               border: "1px solid " + BRAND.border, boxShadow: "0 1px 4px rgba(0,0,0,.04)",
-              position: "relative", overflow: "hidden"
+              position: "relative", overflow: "hidden", textAlign: "center"
             }}>
               <div style={{ position: "absolute", top: 8, right: 10, fontSize: 20, opacity: 0.12 }}>{acct.icon}</div>
               <p style={{ margin: 0, fontSize: 9, color: BRAND.gray, textTransform: "uppercase", letterSpacing: 1.2, fontWeight: 600 }}>{acct.label}</p>
               <p style={{ margin: "2px 0 0", fontSize: 10, color: acct.color, fontWeight: 500 }}>{acct.handle}</p>
-              <p style={{ margin: "6px 0 0", fontSize: 26, fontWeight: 800, color: acct.color, fontFamily: "'Poppins', sans-serif" }}>
+              <p style={{ margin: "6px 0 0", fontSize: 28, fontWeight: 800, color: acct.color, fontFamily: "'Poppins', sans-serif" }}>
                 {count.toLocaleString()}
               </p>
             </div>
@@ -281,44 +302,26 @@ function DashboardTab({ posts, comments, accountFollowers, followerHistory, epis
           Follower & Subscriber Growth
         </h3>
         <p style={{ margin: "0 0 16px", fontSize: 10, color: BRAND.gray }}>
-          Tracked over time · episode drops marked below
+          Tracked over time · episode drops marked on timeline
         </p>
         {chartData.length >= 1 ? (
-          <ResponsiveContainer width="100%" height={340}>
-            <LineChart data={chartData} margin={{ top: 10, right: 20, left: 0, bottom: 20 }}>
+          <ResponsiveContainer width="100%" height={360}>
+            <LineChart data={chartData} margin={{ top: 10, right: 20, left: 0, bottom: 40 }}>
               <CartesianGrid strokeDasharray="3 3" stroke={BRAND.border} />
-              <XAxis dataKey="label" tick={{ fill: BRAND.gray, fontSize: 10 }} axisLine={{ stroke: BRAND.border }} />
+              <XAxis dataKey="label" tick={{ fill: BRAND.gray, fontSize: 9 }} axisLine={{ stroke: BRAND.border }} angle={-30} textAnchor="end" height={60} interval={0} />
               <YAxis tick={{ fill: BRAND.gray, fontSize: 10 }} axisLine={{ stroke: BRAND.border }} />
               <Tooltip contentStyle={ttStyle} />
               <Legend wrapperStyle={{ fontSize: 10 }} />
-              <Line type="monotone" dataKey="YT @twobecontinuedhq" stroke="#FF0000" strokeWidth={2} dot={{ r: 3 }} />
-              <Line type="monotone" dataKey="IG @twobecontinuedhq" stroke="#E1306C" strokeWidth={2} dot={{ r: 3 }} />
-              <Line type="monotone" dataKey="TT @twobecontinuedhq" stroke="#010101" strokeWidth={2} dot={{ r: 3 }} />
-              <Line type="monotone" dataKey="IG @itsdelaneyandhadley" stroke="#C13584" strokeWidth={2} dot={{ r: 3 }} />
-              <Line type="monotone" dataKey="TT @itsdelaneyandhadley" stroke="#555555" strokeWidth={2} dot={{ r: 3 }} />
+              <Line type="monotone" dataKey="YT @twobecontinuedhq" stroke="#FF0000" strokeWidth={2} dot={{ r: 3 }} connectNulls />
+              <Line type="monotone" dataKey="IG @twobecontinuedhq" stroke="#E1306C" strokeWidth={2} dot={{ r: 3 }} connectNulls />
+              <Line type="monotone" dataKey="TT @twobecontinuedhq" stroke="#010101" strokeWidth={2} dot={{ r: 3 }} connectNulls />
+              <Line type="monotone" dataKey="IG @itsdelaneyandhadley" stroke="#C13584" strokeWidth={2} dot={{ r: 3 }} connectNulls />
+              <Line type="monotone" dataKey="TT @itsdelaneyandhadley" stroke="#555555" strokeWidth={2} dot={{ r: 3 }} connectNulls />
             </LineChart>
           </ResponsiveContainer>
         ) : (
           <div style={{ textAlign: "center", padding: 40, color: BRAND.gray }}>
             <p style={{ fontSize: 13 }}>Scrape to start tracking growth.</p>
-          </div>
-        )}
-
-        {episodeDates.length > 0 && (
-          <div style={{ marginTop: 12, display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "center" }}>
-            {episodeDates.map(function(ep) {
-              return (
-                <div key={ep.name} style={{
-                  display: "flex", alignItems: "center", gap: 4,
-                  fontSize: 10, color: BRAND.gray,
-                  background: BRAND.lightGray, padding: "4px 12px", borderRadius: 12
-                }}>
-                  <span style={{ color: BRAND.purple, fontWeight: 700 }}>📌 {ep.name}</span>
-                  <span>·</span>
-                  <span>{new Date(ep.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
-                </div>
-              );
-            })}
           </div>
         )}
       </div>
@@ -327,10 +330,48 @@ function DashboardTab({ posts, comments, accountFollowers, followerHistory, epis
 }
 
 function PostsTab({ posts, filterPlatform, setFilterPlatform, filterEpisode, setFilterEpisode, episodes }) {
+  const [sortBy, setSortBy] = useState("date");
+  const [sortDir, setSortDir] = useState("desc");
+
+  const handleSort = (col) => {
+    if (sortBy === col) { setSortDir(sortDir === "desc" ? "asc" : "desc"); }
+    else { setSortBy(col); setSortDir("desc"); }
+  };
+
+  const sortArrow = (col) => {
+    if (sortBy !== col) return " ↕";
+    return sortDir === "desc" ? " ↓" : " ↑";
+  };
+
   const filtered = posts.filter(p =>
     (!filterPlatform || p.platform === filterPlatform) &&
     (!filterEpisode || p.episode === filterEpisode)
-  ).sort((a, b) => new Date(b.date) - new Date(a.date));
+  ).sort((a, b) => {
+    var va, vb;
+    switch (sortBy) {
+      case "date": va = new Date(a.date || 0); vb = new Date(b.date || 0); break;
+      case "title": va = (a.title || "").toLowerCase(); vb = (b.title || "").toLowerCase(); break;
+      case "platform": va = a.platform || ""; vb = b.platform || ""; break;
+      case "episode": va = a.episode || ""; vb = b.episode || ""; break;
+      case "likes": va = a.likes || 0; vb = b.likes || 0; break;
+      case "comments": va = a.commentCount || 0; vb = b.commentCount || 0; break;
+      case "views": va = a.views || 0; vb = b.views || 0; break;
+      default: va = 0; vb = 0;
+    }
+    if (va < vb) return sortDir === "desc" ? 1 : -1;
+    if (va > vb) return sortDir === "desc" ? -1 : 1;
+    return 0;
+  });
+
+  const columns = [
+    { key: "date", label: "Date", align: "left" },
+    { key: "title", label: "Title", align: "left" },
+    { key: "platform", label: "Platform", align: "center" },
+    { key: "episode", label: "Episode", align: "center" },
+    { key: "likes", label: "Likes", align: "center" },
+    { key: "comments", label: "Comments", align: "center" },
+    { key: "views", label: "Views", align: "center" }
+  ];
 
   return (
     <div style={{ padding: 24 }}>
@@ -348,15 +389,22 @@ function PostsTab({ posts, filterPlatform, setFilterPlatform, filterEpisode, set
       </div>
       <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
         <table style={{ width: "100%", minWidth: 600, borderCollapse: "separate", borderSpacing: "0 5px" }}>
-          <thead><tr>{["Date", "Title", "Platform", "Episode", "Likes", "Comments", "Views"].map(h => (
-            <th key={h} style={{ padding: "8px 12px", textAlign: (h === "Episode" || h === "Likes" || h === "Comments" || h === "Views") ? "center" : "left", fontSize: 10, color: BRAND.gray, textTransform: "uppercase", letterSpacing: 1.5, fontWeight: 700, borderBottom: `1px solid ${BRAND.border}` }}>{h}</th>
+          <thead><tr>{columns.map(col => (
+            <th key={col.key} onClick={() => handleSort(col.key)} style={{
+              padding: "8px 12px", textAlign: col.align, fontSize: 10, color: BRAND.gray,
+              textTransform: "uppercase", letterSpacing: 1.5, fontWeight: 700,
+              borderBottom: "1px solid " + BRAND.border, cursor: "pointer", userSelect: "none",
+              background: sortBy === col.key ? BRAND.lightGray : "transparent"
+            }}>
+              {col.label}{sortArrow(col.key)}
+            </th>
           ))}</tr></thead>
           <tbody>{filtered.map(p => (
             <tr key={p.id} style={{ background: BRAND.white }}>
               <td style={tdS}>{new Date(p.date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</td>
               <td style={{ ...tdS, fontWeight: 600, color: BRAND.dark, maxWidth: 240, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.title}</td>
-              <td style={tdS}><PlatformBadge platform={p.platform} /></td>
-              <td style={{ ...tdS, textAlign: "center" }}><span style={{ padding: "2px 7px", borderRadius: 5, background: `${BRAND.purple}12`, color: BRAND.purple, fontSize: 10, fontWeight: 700 }}>{p.episode || "—"}</span></td>
+              <td style={{ ...tdS, textAlign: "center" }}><PlatformBadge platform={p.platform} /></td>
+              <td style={{ ...tdS, textAlign: "center" }}><span style={{ padding: "2px 7px", borderRadius: 5, background: BRAND.purple + "12", color: BRAND.purple, fontSize: 10, fontWeight: 700 }}>{p.episode || "—"}</span></td>
               <td style={{ ...tdS, color: BRAND.magenta, fontWeight: 700, textAlign: "center" }}>♥ {(p.likes || 0).toLocaleString()}</td>
               <td style={{ ...tdS, color: BRAND.teal, fontWeight: 600, textAlign: "center" }}>{(p.commentCount || 0).toLocaleString()}</td>
               <td style={{ ...tdS, color: BRAND.purple, textAlign: "center" }}>{(p.views || 0).toLocaleString()}</td>
@@ -589,6 +637,15 @@ export default function App() {
       setData(stored || SEED_DATA);
       setLoading(false);
     })();
+  }, []);
+
+  // Refresh data from server periodically to stay in sync across devices
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      const fresh = await loadData();
+      if (fresh && fresh.lastUpdated) setData(fresh);
+    }, 30000);
+    return () => clearInterval(interval);
   }, []);
 
   const persist = useCallback(async (nd) => { setData(nd); await saveData(nd); }, []);

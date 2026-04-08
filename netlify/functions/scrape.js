@@ -143,3 +143,82 @@ async function scrapeInstagramFast(token, username, platformLabel, episodes) {
         date: p.timestamp ? p.timestamp.split("T")[0] : new Date().toISOString().split("T")[0],
         likes: p.likesCount || p.likes || 0,
         commentCount: p.commentsCount || p.comments || 0,
+        views: p.videoViewCount || p.videoPlayCount || p.views || 0,
+        followerGain: 0,
+        url: p.url || "https://www.instagram.com/p/" + (p.shortCode || "")
+      });
+    }
+    return { posts: posts, followers: followers };
+  } catch (e) { return { posts: [], followers: 0 }; }
+}
+
+async function scrapeTikTok(token, username, episodes) {
+  if (!token) return { posts: [], followers: 0 };
+  try {
+    var res = await timeoutFetch("https://api.apify.com/v2/acts/clockworks~tiktok-scraper/run-sync-get-dataset-items?token=" + token + "&timeout=15", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profiles: ["https://www.tiktok.com/@" + username], resultsPerPage: 20, shouldDownloadVideos: false })
+    }, 20000);
+    if (!res.ok) return { posts: [], followers: 0 };
+    var items = await res.json();
+    if (!Array.isArray(items)) return { posts: [], followers: 0 };
+    var followers = 0;
+    var posts = [];
+    for (var i = 0; i < items.length; i++) {
+      var item = items[i];
+      if (item.authorMeta && item.authorMeta.fans) followers = item.authorMeta.fans;
+      var caption = (item.text || item.desc || "").substring(0, 200);
+      var title = caption || ("TikTok " + (i + 1));
+      var ep = detectEpisode(title, episodes);
+      posts.push({ id: "tt_" + (item.id || Date.now().toString(36) + Math.random().toString(36).slice(2, 5)), title: title.substring(0, 120), platform: "tiktok", episode: ep, date: item.createTimeISO ? item.createTimeISO.split("T")[0] : new Date().toISOString().split("T")[0], likes: item.diggCount || item.likesCount || 0, commentCount: item.commentCount || item.commentsCount || 0, views: item.playCount || item.videoViewCount || 0, followerGain: 0, url: item.webVideoUrl || "https://www.tiktok.com/@" + username });
+    }
+    return { posts: posts, followers: followers };
+  } catch (e) { return { posts: [], followers: 0 }; }
+}
+
+exports.handler = async (event) => {
+  var headers = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "Content-Type", "Content-Type": "application/json" };
+  if (event.httpMethod === "OPTIONS") return { statusCode: 200, headers: headers, body: "" };
+
+  var apifyToken = process.env.APIFY_API_TOKEN;
+
+  if (event.httpMethod === "GET") {
+    var stored = await loadStored(apifyToken);
+    return { statusCode: 200, headers: headers, body: JSON.stringify(stored || { posts: [], comments: [], lastUpdated: null }) };
+  }
+
+  if (event.httpMethod === "POST") {
+    var ytKey = process.env.YOUTUBE_API_KEY;
+    try {
+      var ytResult = await scrapeYouTube(ytKey);
+      var episodes = ytResult.episodes || [];
+
+      var settled = await Promise.allSettled([
+        scrapeInstagramFast(apifyToken, IG_ACCOUNT, "instagram", episodes),
+        scrapeInstagramFast(apifyToken, IG_HOSTS_ACCOUNT, "instagram_hosts", episodes),
+        scrapeTikTok(apifyToken, TIKTOK_ACCOUNT, episodes)
+      ]);
+
+      var igResult = settled[0].status === "fulfilled" ? settled[0].value : { posts: [], followers: 0 };
+      var igHostsResult = settled[1].status === "fulfilled" ? settled[1].value : { posts: [], followers: 0 };
+      var ttResult = settled[2].status === "fulfilled" ? settled[2].value : { posts: [], followers: 0 };
+
+      var result = {
+        posts: [].concat(ytResult.posts, igResult.posts, igHostsResult.posts, ttResult.posts),
+        comments: ytResult.comments || [],
+        accountFollowers: { youtube: ytResult.subscribers, instagram: igResult.followers, tiktok: ttResult.followers, instagram_hosts: igHostsResult.followers },
+        lastUpdated: new Date().toISOString(),
+        lastScraped: new Date().toISOString(),
+        episodes: episodes.map(function(e) { return { name: e.name, title: e.title }; }),
+        debug: { yt: ytResult.posts.length, ig: igResult.posts.length, igH: igHostsResult.posts.length, tt: ttResult.posts.length }
+      };
+
+      await saveStored(apifyToken, result);
+      return { statusCode: 200, headers: headers, body: JSON.stringify(result) };
+    } catch (e) {
+      return { statusCode: 200, headers: headers, body: JSON.stringify({ error: e.message }) };
+    }
+  }
+  return { statusCode: 405, headers: headers, body: "Method not allowed" };
+};

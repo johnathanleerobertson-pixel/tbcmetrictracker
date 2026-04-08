@@ -161,7 +161,6 @@ async function scrapeYouTube(ytKey) {
       }
     }
 
-    // Get ALL comments from ALL videos, 3 pages each (300 per video max)
     var allComments = [];
     for (var i = 0; i < videoDetails.length; i++) {
       try {
@@ -206,10 +205,10 @@ async function scrapeYouTube(ytKey) {
 async function scrapeInstagramFast(token, username, platformLabel, episodes) {
   if (!token) return { posts: [], followers: 0 };
   try {
-    var res = await timeoutFetch("https://api.apify.com/v2/acts/apify~instagram-profile-scraper/run-sync-get-dataset-items?token=" + token + "&timeout=10", {
+    var res = await timeoutFetch("https://api.apify.com/v2/acts/apify~instagram-profile-scraper/run-sync-get-dataset-items?token=" + token + "&timeout=15", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ usernames: [username] })
-    }, 12000);
+    }, 18000);
     if (!res.ok) return { posts: [], followers: 0 };
     var items = await res.json();
     if (!Array.isArray(items) || !items.length) return { posts: [], followers: 0 };
@@ -224,155 +223,4 @@ async function scrapeInstagramFast(token, username, platformLabel, episodes) {
       var postDate = p.timestamp ? p.timestamp.split("T")[0] : new Date().toISOString().split("T")[0];
       var ep = detectEpisode(title, postDate, episodes);
       posts.push({
-        id: "ig_" + (p.shortCode || Date.now().toString(36) + Math.random().toString(36).slice(2, 5)),
-        title: title.substring(0, 120), platform: platformLabel, episode: ep, date: postDate,
-        likes: p.likesCount || 0, commentCount: p.commentsCount || 0, views: p.videoViewCount || 0,
-        followerGain: 0, url: p.url || "https://www.instagram.com/p/" + (p.shortCode || "")
-      });
-    }
-    return { posts: posts, followers: followers };
-  } catch (e) { return { posts: [], followers: 0 }; }
-}
-
-async function scrapeTikTok(token, username, platformKey, episodes) {
-  if (!token) return { posts: [], followers: 0 };
-  try {
-    var res = await timeoutFetch("https://api.apify.com/v2/acts/clockworks~tiktok-scraper/run-sync-get-dataset-items?token=" + token + "&timeout=10", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ profiles: ["https://www.tiktok.com/@" + username], resultsPerPage: 20, shouldDownloadVideos: false })
-    }, 12000);
-    if (!res.ok) return { posts: [], followers: 0 };
-    var items = await res.json();
-    if (!Array.isArray(items)) return { posts: [], followers: 0 };
-    var followers = 0;
-    var posts = [];
-    for (var i = 0; i < items.length; i++) {
-      var item = items[i];
-      if (item.authorMeta) followers = item.authorMeta.fans || item.authorMeta.followers || item.authorMeta.followerCount || followers;
-      if (item.author && !followers) followers = item.author.fans || item.author.followers || item.author.followerCount || followers;
-      var caption = (item.text || item.desc || "").substring(0, 200);
-      var title = caption || ("TikTok " + (i + 1));
-      var postDate = item.createTimeISO ? item.createTimeISO.split("T")[0] : new Date().toISOString().split("T")[0];
-      var ep = detectEpisode(title, postDate, episodes);
-      posts.push({ id: "tt_" + (item.id || Date.now().toString(36) + Math.random().toString(36).slice(2, 5)), title: title.substring(0, 120), platform: platformKey, episode: ep, date: postDate, likes: item.diggCount || item.likesCount || 0, commentCount: item.commentCount || item.commentsCount || 0, views: item.playCount || item.videoViewCount || 0, followerGain: 0, url: item.webVideoUrl || "https://www.tiktok.com/@" + username });
-    }
-    return { posts: posts, followers: followers };
-  } catch (e) { return { posts: [], followers: 0 }; }
-}
-
-async function analyzeSentiment(comments, apiKey) {
-  if (!apiKey || !comments.length) return comments;
-  try {
-    var batch = comments.slice(0, 100).map(function(c, i) { return { index: i, text: (c.text || "").substring(0, 200) }; });
-    var sentRes = await timeoutFetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-20250514", max_tokens: 4000,
-        messages: [{ role: "user", content: "Analyze sentiment of these comments. Return ONLY a JSON array of {index, sentiment, score}. sentiment must be: positive, neutral, or negative. score: 0.0-1.0 confidence.\n\n" + JSON.stringify(batch) }]
-      })
-    }, 15000);
-    var sentData = await sentRes.json();
-    var sentText = (sentData.content || []).map(function(i) { return i.text || ""; }).join("");
-    var sentResults = JSON.parse(sentText.replace(/```json|```/g, "").trim());
-    for (var k = 0; k < sentResults.length; k++) {
-      var idx = sentResults[k].index;
-      if (comments[idx]) {
-        comments[idx].sentiment = sentResults[k].sentiment;
-        comments[idx].score = sentResults[k].score;
-      }
-    }
-  } catch (e) {}
-  return comments;
-}
-
-exports.handler = async (event) => {
-  var headers = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "Content-Type", "Content-Type": "application/json" };
-  if (event.httpMethod === "OPTIONS") return { statusCode: 200, headers: headers, body: "" };
-
-  var apifyToken = process.env.APIFY_API_TOKEN;
-
-  if (event.httpMethod === "GET") {
-    var stored = await loadStored(apifyToken);
-    return { statusCode: 200, headers: headers, body: JSON.stringify(stored || { posts: [], comments: [], lastUpdated: null }) };
-  }
-
-  if (event.httpMethod === "POST") {
-    var ytKey = process.env.YOUTUBE_API_KEY;
-    var anthropicKey = process.env.ANTHROPIC_API_KEY;
-    try {
-      var allSettled = await Promise.allSettled([
-        scrapeYouTube(ytKey),
-        scrapeInstagramFast(apifyToken, IG_ACCOUNT, "instagram", []),
-        scrapeInstagramFast(apifyToken, IG_HOSTS_ACCOUNT, "instagram_hosts", []),
-        scrapeTikTok(apifyToken, TIKTOK_ACCOUNT, "tiktok", []),
-        scrapeTikTok(apifyToken, TIKTOK_HOSTS_ACCOUNT, "tiktok_hosts", [])
-      ]);
-
-      var ytResult = allSettled[0].status === "fulfilled" ? allSettled[0].value : { posts: [], comments: [], subscribers: 0, episodes: [] };
-      var igResult = allSettled[1].status === "fulfilled" ? allSettled[1].value : { posts: [], followers: 0 };
-      var igHostsResult = allSettled[2].status === "fulfilled" ? allSettled[2].value : { posts: [], followers: 0 };
-      var ttResult = allSettled[3].status === "fulfilled" ? allSettled[3].value : { posts: [], followers: 0 };
-      var ttHostsResult = allSettled[4].status === "fulfilled" ? allSettled[4].value : { posts: [], followers: 0 };
-
-      var episodes = ytResult.episodes || [];
-
-      function retagPosts(posts) {
-        return posts.map(function(p) {
-          p.episode = detectEpisode(p.title, p.date, episodes);
-          return p;
-        });
-      }
-      igResult.posts = retagPosts(igResult.posts);
-      igHostsResult.posts = retagPosts(igHostsResult.posts);
-      ttResult.posts = retagPosts(ttResult.posts);
-      ttHostsResult.posts = retagPosts(ttHostsResult.posts);
-
-      // Load existing data first for follower persistence
-      var existing = await loadStored(apifyToken);
-      var prevFollowers = (existing && existing.accountFollowers) || {};
-
-      // Preserve last known follower counts when scrapers return 0 (timeout)
-      var currentFollowers = {
-        youtube: ytResult.subscribers || prevFollowers.youtube || 0,
-        instagram: igResult.followers || prevFollowers.instagram || 0,
-        tiktok: ttResult.followers || prevFollowers.tiktok || 0,
-        instagram_hosts: igHostsResult.followers || prevFollowers.instagram_hosts || 0,
-        tiktok_hosts: ttHostsResult.followers || prevFollowers.tiktok_hosts || 0
-      };
-
-      var followerHistory = (existing && existing.followerHistory) || [];
-      var hasSeed = followerHistory.some(function(h) { return h.date === "2026-03-23"; });
-      if (!hasSeed) followerHistory = SEED_HISTORY.concat(followerHistory);
-      followerHistory = followerHistory.filter(function(h) { return !(h.date === "2026-04-01" && h.youtube === 3); });
-
-      var today = new Date().toISOString().split("T")[0];
-      var hasData = currentFollowers.youtube > 0 || currentFollowers.instagram > 0 || currentFollowers.tiktok > 0;
-      if (hasData) {
-        followerHistory = followerHistory.filter(function(h) { return h.date !== today; });
-        followerHistory.push({ date: today, youtube: currentFollowers.youtube, instagram: currentFollowers.instagram, tiktok: currentFollowers.tiktok, instagram_hosts: currentFollowers.instagram_hosts, tiktok_hosts: currentFollowers.tiktok_hosts });
-        followerHistory.sort(function(a, b) { return a.date.localeCompare(b.date); });
-      }
-
-      var allComments = ytResult.comments || [];
-      allComments = await analyzeSentiment(allComments, anthropicKey);
-
-      var result = {
-        posts: [].concat(ytResult.posts, igResult.posts, igHostsResult.posts, ttResult.posts, ttHostsResult.posts),
-        comments: allComments,
-        accountFollowers: currentFollowers,
-        followerHistory: followerHistory,
-        lastUpdated: new Date().toISOString(),
-        lastScraped: new Date().toISOString(),
-        episodes: episodes.map(function(e) { return { name: e.name, title: e.title, date: e.date, num: e.num }; }),
-        debug: { yt: ytResult.posts.length, ig: igResult.posts.length, igH: igHostsResult.posts.length, tt: ttResult.posts.length, ttH: ttHostsResult.posts.length, comments: allComments.length }
-      };
-
-      await saveStored(apifyToken, result);
-      return { statusCode: 200, headers: headers, body: JSON.stringify(result) };
-    } catch (e) {
-      return { statusCode: 200, headers: headers, body: JSON.stringify({ error: e.message }) };
-    }
-  }
-  return { statusCode: 405, headers: headers, body: "Method not allowed" };
-};
+        id: "ig_" +

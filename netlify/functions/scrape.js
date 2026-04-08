@@ -1,12 +1,11 @@
 const fetch = require("node-fetch");
-const { getStore } = require("@netlify/blobs");
 
 var YOUTUBE_CHANNEL_HANDLE = "twobecontinuedhq";
 var IG_ACCOUNT = "twobecontinuedhq";
 var IG_HOSTS_ACCOUNT = "itsdelaneyandhadley";
 var TIKTOK_ACCOUNT = "twobecontinuedhq";
-var STORAGE_KEY = "tbc-metrics-latest";
-var cachedData = null;
+var STORE_NAME = "tbc-metrics-store";
+var RECORD_KEY = "latest";
 
 function timeoutFetch(url, options, ms) {
   return Promise.race([
@@ -27,19 +26,42 @@ function detectEpisode(title, episodes) {
   return "Promo";
 }
 
-async function loadStored() {
+async function getOrCreateStore(token) {
   try {
-    var store = getStore("tbc-data");
-    var data = await store.get(STORAGE_KEY, { type: "json" });
-    return data || null;
+    var listRes = await timeoutFetch("https://api.apify.com/v2/key-value-stores?token=" + token + "&unnamed=false", {}, 5000);
+    var listData = await listRes.json();
+    var stores = (listData.data && listData.data.items) || [];
+    for (var i = 0; i < stores.length; i++) {
+      if (stores[i].name === STORE_NAME) return stores[i].id;
+    }
+    var createRes = await timeoutFetch("https://api.apify.com/v2/key-value-stores?token=" + token + "&name=" + STORE_NAME, { method: "POST" }, 5000);
+    var createData = await createRes.json();
+    return createData.data && createData.data.id;
   } catch (e) { return null; }
 }
 
-async function saveStored(data) {
+async function loadStored(token) {
+  if (!token) return null;
   try {
-    var store = getStore("tbc-data");
-    await store.setJSON(STORAGE_KEY, data);
-    return null;
+    var storeId = await getOrCreateStore(token);
+    if (!storeId) return null;
+    var res = await timeoutFetch("https://api.apify.com/v2/key-value-stores/" + storeId + "/records/" + RECORD_KEY + "?token=" + token, {}, 5000);
+    if (!res.ok) return null;
+    return await res.json();
+  } catch (e) { return null; }
+}
+
+async function saveStored(token, data) {
+  if (!token) return "no token";
+  try {
+    var storeId = await getOrCreateStore(token);
+    if (!storeId) return "no store";
+    var res = await timeoutFetch("https://api.apify.com/v2/key-value-stores/" + storeId + "/records/" + RECORD_KEY + "?token=" + token, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data)
+    }, 5000);
+    return res.ok ? null : "save failed: " + res.status;
   } catch (e) { return e.message; }
 }
 
@@ -179,16 +201,15 @@ exports.handler = async (event) => {
   var headers = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "Content-Type", "Content-Type": "application/json" };
   if (event.httpMethod === "OPTIONS") return { statusCode: 200, headers: headers, body: "" };
 
+  var apifyToken = process.env.APIFY_API_TOKEN;
+
   if (event.httpMethod === "GET") {
-    if (cachedData) return { statusCode: 200, headers: headers, body: JSON.stringify(cachedData) };
-    var stored = await loadStored();
-    if (stored) { cachedData = stored; return { statusCode: 200, headers: headers, body: JSON.stringify(stored) }; }
-    return { statusCode: 200, headers: headers, body: JSON.stringify({ posts: [], comments: [], lastUpdated: null }) };
+    var stored = await loadStored(apifyToken);
+    return { statusCode: 200, headers: headers, body: JSON.stringify(stored || { posts: [], comments: [], lastUpdated: null }) };
   }
 
   if (event.httpMethod === "POST") {
     var ytKey = process.env.YOUTUBE_API_KEY;
-    var apifyToken = process.env.APIFY_API_TOKEN;
     try {
       var ytResult = await scrapeYouTube(ytKey);
       var episodes = ytResult.episodes || [];
@@ -213,10 +234,8 @@ exports.handler = async (event) => {
         debug: { yt: ytResult.posts.length, ig: igResult.posts.length, igH: igHostsResult.posts.length, tt: ttResult.posts.length }
       };
 
-      cachedData = result;
-      var saveErr = await saveStored(result);
+      var saveErr = await saveStored(apifyToken, result);
       result.debug.saveError = saveErr;
-
       return { statusCode: 200, headers: headers, body: JSON.stringify(result) };
     } catch (e) {
       return { statusCode: 200, headers: headers, body: JSON.stringify({ error: e.message }) };

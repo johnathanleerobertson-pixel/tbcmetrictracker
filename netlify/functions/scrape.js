@@ -235,33 +235,70 @@ async function scrapeInstagramFast(token, username, platformLabel, episodes) {
 
 async function scrapeTikTok(token, username, platformKey, episodes) {
   if (!token) return { posts: [], followers: 0 };
+  // Try apidojo first (98% success), fall back to clockworks
   try {
-    var res = await timeoutFetch("https://api.apify.com/v2/acts/clockworks~tiktok-scraper/run-sync-get-dataset-items?token=" + token + "&timeout=20", {
+    var res = await timeoutFetch("https://api.apify.com/v2/acts/apidojo~tiktok-scraper-api/run-sync-get-dataset-items?token=" + token + "&timeout=20", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profiles: ["https://www.tiktok.com/@" + username], maxProfileVideos: 10 })
+    }, 25000);
+    if (res.ok) {
+      var items = await res.json();
+      if (Array.isArray(items) && items.length > 0) {
+        var followers = 0;
+        var posts = [];
+        for (var i = 0; i < items.length; i++) {
+          var item = items[i];
+          // apidojo format
+          if (item.authorMeta) {
+            var f = item.authorMeta.fans || item.authorMeta.followers || item.authorMeta.followerCount || 0;
+            if (f > followers) followers = f;
+          }
+          if (item.author) {
+            var f2 = item.author.fans || item.author.followers || item.author.followerCount || 0;
+            if (f2 > followers) followers = f2;
+          }
+          // Also check top-level fields
+          if (item.followerCount > followers) followers = item.followerCount;
+          if (item.fans > followers) followers = item.fans;
+          var caption = (item.text || item.desc || item.title || "").substring(0, 200);
+          var title = caption || ("TikTok " + (i + 1));
+          var postDate = (item.createTimeISO || item.createTime || "").split("T")[0] || new Date().toISOString().split("T")[0];
+          var ep = detectEpisode(title, postDate, episodes);
+          posts.push({ id: "tt_" + (item.id || Date.now().toString(36) + Math.random().toString(36).slice(2, 5)), title: title.substring(0, 120), platform: platformKey, episode: ep, date: postDate, likes: item.diggCount || item.likesCount || item.likes || 0, commentCount: item.commentCount || item.commentsCount || item.comments || 0, views: item.playCount || item.plays || item.views || 0, followerGain: 0, url: item.webVideoUrl || item.url || "https://www.tiktok.com/@" + username });
+        }
+        if (followers > 0 || posts.length > 0) return { posts: posts, followers: followers };
+      }
+    }
+  } catch (e) {}
+
+  // Fallback to clockworks
+  try {
+    var res2 = await timeoutFetch("https://api.apify.com/v2/acts/clockworks~tiktok-scraper/run-sync-get-dataset-items?token=" + token + "&timeout=15", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ profiles: ["https://www.tiktok.com/@" + username], resultsPerPage: 10, shouldDownloadVideos: false })
-    }, 25000);
-    if (!res.ok) return { posts: [], followers: 0 };
-    var items = await res.json();
-    if (!Array.isArray(items)) return { posts: [], followers: 0 };
-    var followers = 0;
-    var posts = [];
-    for (var i = 0; i < items.length; i++) {
-      var item = items[i];
-      if (item.authorMeta) {
-        var f = item.authorMeta.fans || item.authorMeta.followers || item.authorMeta.followerCount || 0;
-        if (f > followers) followers = f;
+    }, 20000);
+    if (!res2.ok) return { posts: [], followers: 0 };
+    var items2 = await res2.json();
+    if (!Array.isArray(items2)) return { posts: [], followers: 0 };
+    var followers2 = 0;
+    var posts2 = [];
+    for (var i2 = 0; i2 < items2.length; i2++) {
+      var item2 = items2[i2];
+      if (item2.authorMeta) {
+        var ff = item2.authorMeta.fans || item2.authorMeta.followers || item2.authorMeta.followerCount || 0;
+        if (ff > followers2) followers2 = ff;
       }
-      if (item.author) {
-        var f2 = item.author.fans || item.author.followers || item.author.followerCount || 0;
-        if (f2 > followers) followers = f2;
+      if (item2.author) {
+        var ff2 = item2.author.fans || item2.author.followers || item2.author.followerCount || 0;
+        if (ff2 > followers2) followers2 = ff2;
       }
-      var caption = (item.text || item.desc || "").substring(0, 200);
-      var title = caption || ("TikTok " + (i + 1));
-      var postDate = item.createTimeISO ? item.createTimeISO.split("T")[0] : new Date().toISOString().split("T")[0];
-      var ep = detectEpisode(title, postDate, episodes);
-      posts.push({ id: "tt_" + (item.id || Date.now().toString(36) + Math.random().toString(36).slice(2, 5)), title: title.substring(0, 120), platform: platformKey, episode: ep, date: postDate, likes: item.diggCount || item.likesCount || 0, commentCount: item.commentCount || item.commentsCount || 0, views: item.playCount || item.videoViewCount || 0, followerGain: 0, url: item.webVideoUrl || "https://www.tiktok.com/@" + username });
+      var caption2 = (item2.text || item2.desc || "").substring(0, 200);
+      var title2 = caption2 || ("TikTok " + (i2 + 1));
+      var postDate2 = item2.createTimeISO ? item2.createTimeISO.split("T")[0] : new Date().toISOString().split("T")[0];
+      var ep2 = detectEpisode(title2, postDate2, episodes);
+      posts2.push({ id: "tt_" + (item2.id || Date.now().toString(36) + Math.random().toString(36).slice(2, 5)), title: title2.substring(0, 120), platform: platformKey, episode: ep2, date: postDate2, likes: item2.diggCount || item2.likesCount || 0, commentCount: item2.commentCount || item2.commentsCount || 0, views: item2.playCount || item2.videoViewCount || 0, followerGain: 0, url: item2.webVideoUrl || "https://www.tiktok.com/@" + username });
     }
-    return { posts: posts, followers: followers };
+    return { posts: posts2, followers: followers2 };
   } catch (e) { return { posts: [], followers: 0 }; }
 }
 
@@ -375,7 +412,7 @@ exports.handler = async (event) => {
         lastUpdated: new Date().toISOString(),
         lastScraped: new Date().toISOString(),
         episodes: episodes.map(function(e) { return { name: e.name, title: e.title, date: e.date, num: e.num }; }),
-        debug: { yt: ytResult.posts.length, ig: igResult.posts.length, igH: igHostsResult.posts.length, tt: ttResult.posts.length, ttH: ttHostsResult.posts.length, comments: allComments.length, ttFollowers: ttResult.followers, ttHFollowers: ttHostsResult.followers }
+        debug: { yt: ytResult.posts.length, ig: igResult.posts.length, igH: igHostsResult.posts.length, tt: ttResult.posts.length, ttH: ttHostsResult.posts.length, comments: allComments.length, ttFollowers: currentFollowers.tiktok, ttHFollowers: currentFollowers.tiktok_hosts }
       };
 
       await saveStored(apifyToken, result);

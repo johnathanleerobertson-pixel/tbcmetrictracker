@@ -227,11 +227,16 @@ function DashboardTab({ posts, comments, accountFollowers, followerHistory, epis
   ];
 
   var episodeDates = (episodes || []).filter(function(ep) { return ep.date; });
+  var epDateMap = {};
+  episodeDates.forEach(function(ep) { epDateMap[ep.date] = ep.name; });
 
   var chartData = history.map(function(h) {
+    var dateStr = new Date(h.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    var epName = epDateMap[h.date];
     return {
       date: h.date,
-      label: new Date(h.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+      label: dateStr,
+      epLabel: epName ? epName + " Drop" : "",
       "YT @twobecontinuedhq": h.youtube || 0,
       "IG @twobecontinuedhq": h.instagram || 0,
       "TT @twobecontinuedhq": h.tiktok || 0,
@@ -240,17 +245,33 @@ function DashboardTab({ posts, comments, accountFollowers, followerHistory, epis
     };
   }).sort(function(a, b) { return new Date(a.date) - new Date(b.date); });
 
-  // Insert episode dates if missing
+  // Insert episode dates if not in history
   episodeDates.forEach(function(ep) {
     var exists = chartData.some(function(d) { return d.date === ep.date; });
     if (!exists) {
-      chartData.push({
-        date: ep.date,
-        label: new Date(ep.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })
-      });
+      var dateStr = new Date(ep.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
+      chartData.push({ date: ep.date, label: dateStr, epLabel: ep.name + " Drop" });
       chartData.sort(function(a, b) { return new Date(a.date) - new Date(b.date); });
     }
   });
+
+  // Custom x-axis tick that shows date + episode label below
+  function CustomXTick(props) {
+    var x = props.x, y = props.y, payload = props.payload;
+    var item = chartData.find(function(d) { return d.label === payload.value; });
+    var epLabel = item ? item.epLabel : "";
+    return (
+      <g transform={"translate(" + x + "," + y + ")"}>
+        <text x={0} y={0} dy={14} textAnchor="middle" fill={BRAND.gray} fontSize={10}>{payload.value}</text>
+        {epLabel && (
+          <g>
+            <rect x={-45} y={18} width={90} height={16} rx={8} fill={BRAND.purple + "18"} stroke={BRAND.purple + "40"} strokeWidth={0.5} />
+            <text x={0} y={30} textAnchor="middle" fill={BRAND.purple} fontSize={7} fontWeight="700">{epLabel}</text>
+          </g>
+        )}
+      </g>
+    );
+  }
 
   var ttStyle = { background: BRAND.white, border: "1px solid " + BRAND.border, borderRadius: 8, color: BRAND.dark, fontSize: 11, boxShadow: "0 2px 8px rgba(0,0,0,.08)" };
 
@@ -293,39 +314,17 @@ function DashboardTab({ posts, comments, accountFollowers, followerHistory, epis
         <h3 style={{ margin: "0 0 4px", fontSize: 14, color: BRAND.dark, fontFamily: "'Poppins', sans-serif" }}>
           Follower & Subscriber Growth
         </h3>
-        <p style={{ margin: "0 0 12px", fontSize: 10, color: BRAND.gray }}>
-          Tracked over time
+        <p style={{ margin: "0 0 16px", fontSize: 10, color: BRAND.gray }}>
+          Tracked over time · episode drops marked on timeline
         </p>
-
-        {/* Episode drop labels - above chart */}
-        {episodeDates.length > 0 && (
-          <div style={{ marginBottom: 14, display: "flex", gap: 10, flexWrap: "wrap" }}>
-            {episodeDates.map(function(ep) {
-              var dateStr = new Date(ep.date + "T12:00:00").toLocaleDateString("en-US", { month: "long", day: "numeric" });
-              return (
-                <div key={ep.name} style={{
-                  display: "inline-flex", alignItems: "center", gap: 6,
-                  fontSize: 11, color: BRAND.dark, fontWeight: 600,
-                  background: "linear-gradient(135deg, " + BRAND.teal + "15, " + BRAND.magenta + "15)",
-                  padding: "6px 14px", borderRadius: 20,
-                  border: "1px solid " + BRAND.border
-                }}>
-                  <span style={{ color: BRAND.purple }}>📌</span>
-                  <span>{ep.name} Episode Drop — {dateStr}</span>
-                </div>
-              );
-            })}
-          </div>
-        )}
-
         {chartData.length >= 1 ? (
-          <ResponsiveContainer width="100%" height={340}>
-            <LineChart data={chartData} margin={{ top: 10, right: 20, left: 0, bottom: 10 }}>
+          <ResponsiveContainer width="100%" height={380}>
+            <LineChart data={chartData} margin={{ top: 10, right: 20, left: 0, bottom: 45 }}>
               <CartesianGrid strokeDasharray="3 3" stroke={BRAND.border} />
-              <XAxis dataKey="label" tick={{ fill: BRAND.gray, fontSize: 10 }} axisLine={{ stroke: BRAND.border }} interval={0} />
+              <XAxis dataKey="label" tick={<CustomXTick />} axisLine={{ stroke: BRAND.border }} interval={0} height={55} />
               <YAxis tick={{ fill: BRAND.gray, fontSize: 10 }} axisLine={{ stroke: BRAND.border }} />
               <Tooltip contentStyle={ttStyle} />
-              <Legend wrapperStyle={{ fontSize: 10 }} />
+              <Legend wrapperStyle={{ fontSize: 10, paddingTop: 8 }} />
               <Line type="monotone" dataKey="YT @twobecontinuedhq" stroke="#FF0000" strokeWidth={2} dot={{ r: 3 }} connectNulls />
               <Line type="monotone" dataKey="IG @twobecontinuedhq" stroke="#E1306C" strokeWidth={2} dot={{ r: 3 }} connectNulls />
               <Line type="monotone" dataKey="TT @twobecontinuedhq" stroke="#010101" strokeWidth={2} dot={{ r: 3 }} connectNulls />

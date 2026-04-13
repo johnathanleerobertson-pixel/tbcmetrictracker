@@ -21,6 +21,12 @@ function timeoutFetch(url, options, ms) {
   ]);
 }
 
+function toEST(isoDate) {
+  if (!isoDate) return new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+  var d = new Date(isoDate);
+  return d.toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+}
+
 function extractGuestNames(title) {
   if (!title) return null;
   var words = title.replace(/[^a-zA-Z\s&]/g, " ").split(/\s+/);
@@ -156,7 +162,7 @@ async function scrapeYouTube(ytKey) {
         episodeNum++;
         var guestName = extractGuestNames(sorted[v].snippet.title) || ("Episode " + episodeNum);
         var words = sorted[v].snippet.title.toLowerCase().replace(/[^a-z0-9\s]/g, "").split(/\s+/).filter(function(w) { return w.length > 3 && !SKIP_WORDS.includes(w); });
-        episodes.push({ name: guestName, num: episodeNum, keywords: words, title: sorted[v].snippet.title, date: sorted[v].snippet.publishedAt.split("T")[0] });
+        episodes.push({ name: guestName, num: episodeNum, keywords: words, title: sorted[v].snippet.title, date: toEST(sorted[v].snippet.publishedAt) });
       }
     }
 
@@ -174,7 +180,7 @@ async function scrapeYouTube(ytKey) {
           var threads = cd.items || [];
           for (var j = 0; j < threads.length; j++) {
             var c = threads[j].snippet.topLevelComment.snippet;
-            allComments.push({ id: threads[j].id, text: c.textDisplay, author: c.authorDisplayName, date: c.publishedAt.split("T")[0], postTitle: videoDetails[i].snippet.title, platform: "youtube", sentiment: "neutral", score: 0.5 });
+            allComments.push({ id: threads[j].id, text: c.textDisplay, author: c.authorDisplayName, date: toEST(c.publishedAt), postTitle: videoDetails[i].snippet.title, platform: "youtube", sentiment: "neutral", score: 0.5 });
           }
           nextPageToken = cd.nextPageToken;
           if (!nextPageToken) break;
@@ -191,7 +197,7 @@ async function scrapeYouTube(ytKey) {
       if (mM) mins += parseInt(mM[1]);
       var ep = "Promo";
       var tl = v.snippet.title.toLowerCase();
-      var postDate = v.snippet.publishedAt.split("T")[0];
+      var postDate = toEST(v.snippet.publishedAt);
       if (tl.includes("trailer") || tl.includes("introducing")) { ep = "Trailer"; }
       else if (mins >= 20) { for (var e = 0; e < episodes.length; e++) { if (episodes[e].title === v.snippet.title) { ep = episodes[e].name; break; } } }
       else { ep = detectEpisode(v.snippet.title, postDate, episodes); }
@@ -223,19 +229,15 @@ async function scrapeInstagramPosts(token, username, platformLabel, episodes) {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ username: [username], resultsLimit: 100 })
     }, 65000);
-    if (!res.ok) {
-      return await scrapeInstagramFallback(token, username, platformLabel, episodes);
-    }
+    if (!res.ok) return await scrapeInstagramFallback(token, username, platformLabel, episodes);
     var items = await res.json();
-    if (!Array.isArray(items) || !items.length) {
-      return await scrapeInstagramFallback(token, username, platformLabel, episodes);
-    }
+    if (!Array.isArray(items) || !items.length) return await scrapeInstagramFallback(token, username, platformLabel, episodes);
     var posts = [];
     for (var i = 0; i < items.length; i++) {
       var p = items[i];
       var caption = (p.caption || p.alt || p.description || "").substring(0, 200);
       var title = caption || ("Post " + (i + 1));
-      var postDate = (p.timestamp || p.date || "").split("T")[0] || new Date().toISOString().split("T")[0];
+      var postDate = p.timestamp ? toEST(p.timestamp) : (p.date ? p.date.split("T")[0] : toEST(new Date().toISOString()));
       var ep = detectEpisode(title, postDate, episodes);
       posts.push({
         id: "ig_" + (p.shortCode || p.id || Date.now().toString(36) + Math.random().toString(36).slice(2, 5)),
@@ -246,9 +248,7 @@ async function scrapeInstagramPosts(token, username, platformLabel, episodes) {
       });
     }
     return { posts: posts, followers: 0 };
-  } catch (e) {
-    return await scrapeInstagramFallback(token, username, platformLabel, episodes);
-  }
+  } catch (e) { return await scrapeInstagramFallback(token, username, platformLabel, episodes); }
 }
 
 async function scrapeInstagramFallback(token, username, platformLabel, episodes) {
@@ -268,7 +268,7 @@ async function scrapeInstagramFallback(token, username, platformLabel, episodes)
       var p = recentPosts[i];
       var caption = (p.caption || p.alt || "").substring(0, 200);
       var title = caption || ("Post " + (i + 1));
-      var postDate = p.timestamp ? p.timestamp.split("T")[0] : new Date().toISOString().split("T")[0];
+      var postDate = p.timestamp ? toEST(p.timestamp) : toEST(new Date().toISOString());
       var ep = detectEpisode(title, postDate, episodes);
       posts.push({
         id: "ig_" + (p.shortCode || Date.now().toString(36) + Math.random().toString(36).slice(2, 5)),
@@ -305,7 +305,7 @@ async function scrapeTikTok(token, username, platformKey, episodes) {
       }
       var caption = (item.text || item.desc || "").substring(0, 200);
       var title = caption || ("TikTok " + (i + 1));
-      var postDate = item.createTimeISO ? item.createTimeISO.split("T")[0] : new Date().toISOString().split("T")[0];
+      var postDate = item.createTimeISO ? toEST(item.createTimeISO) : toEST(new Date().toISOString());
       var ep = detectEpisode(title, postDate, episodes);
       posts.push({ id: "tt_" + (item.id || Date.now().toString(36) + Math.random().toString(36).slice(2, 5)), title: title.substring(0, 120), platform: platformKey, episode: ep, date: postDate, likes: item.diggCount || item.likesCount || 0, commentCount: item.commentCount || item.commentsCount || 0, views: item.playCount || item.videoViewCount || 0, followerGain: 0, url: item.webVideoUrl || "https://www.tiktok.com/@" + username });
     }
@@ -315,7 +315,6 @@ async function scrapeTikTok(token, username, platformKey, episodes) {
 
 async function analyzeSentiment(comments, apiKey) {
   if (!apiKey || !comments.length) return comments;
-  // Process in batches of 50
   for (var batch = 0; batch < comments.length; batch += 50) {
     try {
       var chunk = comments.slice(batch, batch + 50).map(function(c, i) { return { index: batch + i, text: (c.text || "").substring(0, 200) }; });
@@ -348,7 +347,6 @@ exports.handler = async (event) => {
   var anthropicKey = process.env.ANTHROPIC_API_KEY;
 
   try {
-    // Run everything — no time pressure in background function
     var ytResult = await scrapeYouTube(ytKey);
     var episodes = ytResult.episodes || [];
 
@@ -402,14 +400,13 @@ exports.handler = async (event) => {
       tiktok_hosts: bestFollower(ttHostsResult.followers, prevFollowers.tiktok_hosts, "tiktok_hosts")
     };
 
-    var today = new Date().toISOString().split("T")[0];
+    var today = toEST(new Date().toISOString());
     if (currentFollowers.youtube > 0 || currentFollowers.instagram > 0) {
       followerHistory = followerHistory.filter(function(h) { return h.date !== today; });
       followerHistory.push({ date: today, youtube: currentFollowers.youtube, instagram: currentFollowers.instagram, tiktok: currentFollowers.tiktok, instagram_hosts: currentFollowers.instagram_hosts, tiktok_hosts: currentFollowers.tiktok_hosts });
       followerHistory.sort(function(a, b) { return a.date.localeCompare(b.date); });
     }
 
-    // Analyze ALL comments sentiment — no batch limit
     var allComments = ytResult.comments || [];
     allComments = await analyzeSentiment(allComments, anthropicKey);
 

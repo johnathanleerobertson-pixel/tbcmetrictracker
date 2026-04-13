@@ -202,13 +202,66 @@ async function scrapeYouTube(ytKey) {
   } catch (e) { return { posts: [], comments: [], subscribers: 0, episodes: [] }; }
 }
 
-async function scrapeInstagramFast(token, username, platformLabel, episodes) {
-  if (!token) return { posts: [], followers: 0 };
+async function scrapeInstagramFollowers(token, username) {
+  if (!token) return 0;
   try {
-    var res = await timeoutFetch("https://api.apify.com/v2/acts/apify~instagram-profile-scraper/run-sync-get-dataset-items?token=" + token + "&timeout=15", {
+    var res = await timeoutFetch("https://api.apify.com/v2/acts/apify~instagram-profile-scraper/run-sync-get-dataset-items?token=" + token + "&timeout=10", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ usernames: [username] })
-    }, 18000);
+    }, 12000);
+    if (!res.ok) return 0;
+    var items = await res.json();
+    if (!Array.isArray(items) || !items.length) return 0;
+    return items[0].followersCount || 0;
+  } catch (e) { return 0; }
+}
+
+async function scrapeInstagramPosts(token, username, platformLabel, episodes) {
+  if (!token) return { posts: [], followers: 0 };
+  try {
+    var res = await timeoutFetch("https://api.apify.com/v2/acts/apify~instagram-post-scraper/run-sync-get-dataset-items?token=" + token + "&timeout=20", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: [username], resultsLimit: 100 })
+    }, 25000);
+    if (!res.ok) {
+      return await scrapeInstagramFallback(token, username, platformLabel, episodes);
+    }
+    var items = await res.json();
+    if (!Array.isArray(items) || !items.length) {
+      return await scrapeInstagramFallback(token, username, platformLabel, episodes);
+    }
+    var posts = [];
+    for (var i = 0; i < items.length; i++) {
+      var p = items[i];
+      var caption = (p.caption || p.alt || p.description || "").substring(0, 200);
+      var title = caption || ("Post " + (i + 1));
+      var postDate = (p.timestamp || p.date || "").split("T")[0] || new Date().toISOString().split("T")[0];
+      var ep = detectEpisode(title, postDate, episodes);
+      posts.push({
+        id: "ig_" + (p.shortCode || p.id || Date.now().toString(36) + Math.random().toString(36).slice(2, 5)),
+        title: title.substring(0, 120),
+        platform: platformLabel,
+        episode: ep,
+        date: postDate,
+        likes: p.likesCount || p.likes || 0,
+        commentCount: p.commentsCount || p.comments || 0,
+        views: p.videoViewCount || p.videoPlayCount || p.playCount || p.views || 0,
+        followerGain: 0,
+        url: p.url || "https://www.instagram.com/p/" + (p.shortCode || "")
+      });
+    }
+    return { posts: posts, followers: 0 };
+  } catch (e) {
+    return await scrapeInstagramFallback(token, username, platformLabel, episodes);
+  }
+}
+
+async function scrapeInstagramFallback(token, username, platformLabel, episodes) {
+  try {
+    var res = await timeoutFetch("https://api.apify.com/v2/acts/apify~instagram-profile-scraper/run-sync-get-dataset-items?token=" + token + "&timeout=10", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ usernames: [username] })
+    }, 12000);
     if (!res.ok) return { posts: [], followers: 0 };
     var items = await res.json();
     if (!Array.isArray(items) || !items.length) return { posts: [], followers: 0 };
@@ -235,7 +288,6 @@ async function scrapeInstagramFast(token, username, platformLabel, episodes) {
 
 async function scrapeTikTok(token, username, platformKey, episodes) {
   if (!token) return { posts: [], followers: 0 };
-  // Try apidojo first (98% success), fall back to clockworks
   try {
     var res = await timeoutFetch("https://api.apify.com/v2/acts/apidojo~tiktok-scraper-api/run-sync-get-dataset-items?token=" + token + "&timeout=20", {
       method: "POST", headers: { "Content-Type": "application/json" },
@@ -248,7 +300,6 @@ async function scrapeTikTok(token, username, platformKey, episodes) {
         var posts = [];
         for (var i = 0; i < items.length; i++) {
           var item = items[i];
-          // apidojo format
           if (item.authorMeta) {
             var f = item.authorMeta.fans || item.authorMeta.followers || item.authorMeta.followerCount || 0;
             if (f > followers) followers = f;
@@ -257,7 +308,6 @@ async function scrapeTikTok(token, username, platformKey, episodes) {
             var f2 = item.author.fans || item.author.followers || item.author.followerCount || 0;
             if (f2 > followers) followers = f2;
           }
-          // Also check top-level fields
           if (item.followerCount > followers) followers = item.followerCount;
           if (item.fans > followers) followers = item.fans;
           var caption = (item.text || item.desc || item.title || "").substring(0, 200);
@@ -271,7 +321,6 @@ async function scrapeTikTok(token, username, platformKey, episodes) {
     }
   } catch (e) {}
 
-  // Fallback to clockworks
   try {
     var res2 = await timeoutFetch("https://api.apify.com/v2/acts/clockworks~tiktok-scraper/run-sync-get-dataset-items?token=" + token + "&timeout=15", {
       method: "POST", headers: { "Content-Type": "application/json" },
@@ -345,17 +394,24 @@ exports.handler = async (event) => {
     try {
       var allSettled = await Promise.allSettled([
         scrapeYouTube(ytKey),
-        scrapeInstagramFast(apifyToken, IG_ACCOUNT, "instagram", []),
-        scrapeInstagramFast(apifyToken, IG_HOSTS_ACCOUNT, "instagram_hosts", []),
+        scrapeInstagramPosts(apifyToken, IG_ACCOUNT, "instagram", []),
+        scrapeInstagramPosts(apifyToken, IG_HOSTS_ACCOUNT, "instagram_hosts", []),
+        scrapeInstagramFollowers(apifyToken, IG_ACCOUNT),
+        scrapeInstagramFollowers(apifyToken, IG_HOSTS_ACCOUNT),
         scrapeTikTok(apifyToken, TIKTOK_ACCOUNT, "tiktok", []),
         scrapeTikTok(apifyToken, TIKTOK_HOSTS_ACCOUNT, "tiktok_hosts", [])
       ]);
 
       var ytResult = allSettled[0].status === "fulfilled" ? allSettled[0].value : { posts: [], comments: [], subscribers: 0, episodes: [] };
-      var igResult = allSettled[1].status === "fulfilled" ? allSettled[1].value : { posts: [], followers: 0 };
-      var igHostsResult = allSettled[2].status === "fulfilled" ? allSettled[2].value : { posts: [], followers: 0 };
-      var ttResult = allSettled[3].status === "fulfilled" ? allSettled[3].value : { posts: [], followers: 0 };
-      var ttHostsResult = allSettled[4].status === "fulfilled" ? allSettled[4].value : { posts: [], followers: 0 };
+      var igPostsResult = allSettled[1].status === "fulfilled" ? allSettled[1].value : { posts: [], followers: 0 };
+      var igHostsPostsResult = allSettled[2].status === "fulfilled" ? allSettled[2].value : { posts: [], followers: 0 };
+      var igFollowers = allSettled[3].status === "fulfilled" ? allSettled[3].value : 0;
+      var igHostsFollowers = allSettled[4].status === "fulfilled" ? allSettled[4].value : 0;
+      var ttResult = allSettled[5].status === "fulfilled" ? allSettled[5].value : { posts: [], followers: 0 };
+      var ttHostsResult = allSettled[6].status === "fulfilled" ? allSettled[6].value : { posts: [], followers: 0 };
+
+      if (!igFollowers && igPostsResult.followers) igFollowers = igPostsResult.followers;
+      if (!igHostsFollowers && igHostsPostsResult.followers) igHostsFollowers = igHostsPostsResult.followers;
 
       var episodes = ytResult.episodes || [];
 
@@ -365,8 +421,8 @@ exports.handler = async (event) => {
           return p;
         });
       }
-      igResult.posts = retagPosts(igResult.posts);
-      igHostsResult.posts = retagPosts(igHostsResult.posts);
+      igPostsResult.posts = retagPosts(igPostsResult.posts);
+      igHostsPostsResult.posts = retagPosts(igHostsPostsResult.posts);
       ttResult.posts = retagPosts(ttResult.posts);
       ttHostsResult.posts = retagPosts(ttHostsResult.posts);
 
@@ -387,9 +443,9 @@ exports.handler = async (event) => {
       }
       var currentFollowers = {
         youtube: bestFollower(ytResult.subscribers, prevFollowers.youtube, "youtube"),
-        instagram: bestFollower(igResult.followers, prevFollowers.instagram, "instagram"),
+        instagram: bestFollower(igFollowers, prevFollowers.instagram, "instagram"),
         tiktok: bestFollower(ttResult.followers, prevFollowers.tiktok, "tiktok"),
-        instagram_hosts: bestFollower(igHostsResult.followers, prevFollowers.instagram_hosts, "instagram_hosts"),
+        instagram_hosts: bestFollower(igHostsFollowers, prevFollowers.instagram_hosts, "instagram_hosts"),
         tiktok_hosts: bestFollower(ttHostsResult.followers, prevFollowers.tiktok_hosts, "tiktok_hosts")
       };
 
@@ -405,14 +461,14 @@ exports.handler = async (event) => {
       allComments = await analyzeSentiment(allComments, anthropicKey);
 
       var result = {
-        posts: [].concat(ytResult.posts, igResult.posts, igHostsResult.posts, ttResult.posts, ttHostsResult.posts),
+        posts: [].concat(ytResult.posts, igPostsResult.posts, igHostsPostsResult.posts, ttResult.posts, ttHostsResult.posts),
         comments: allComments,
         accountFollowers: currentFollowers,
         followerHistory: followerHistory,
         lastUpdated: new Date().toISOString(),
         lastScraped: new Date().toISOString(),
         episodes: episodes.map(function(e) { return { name: e.name, title: e.title, date: e.date, num: e.num }; }),
-        debug: { yt: ytResult.posts.length, ig: igResult.posts.length, igH: igHostsResult.posts.length, tt: ttResult.posts.length, ttH: ttHostsResult.posts.length, comments: allComments.length, ttFollowers: currentFollowers.tiktok, ttHFollowers: currentFollowers.tiktok_hosts }
+        debug: { yt: ytResult.posts.length, ig: igPostsResult.posts.length, igH: igHostsPostsResult.posts.length, tt: ttResult.posts.length, ttH: ttHostsResult.posts.length, comments: allComments.length, igFollowers: igFollowers, igHFollowers: igHostsFollowers, ttFollowers: currentFollowers.tiktok, ttHFollowers: currentFollowers.tiktok_hosts }
       };
 
       await saveStored(apifyToken, result);

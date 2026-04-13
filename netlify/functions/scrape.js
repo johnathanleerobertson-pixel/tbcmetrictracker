@@ -219,10 +219,10 @@ async function scrapeInstagramFollowers(token, username) {
 async function scrapeInstagramPosts(token, username, platformLabel, episodes) {
   if (!token) return { posts: [], followers: 0 };
   try {
-    var res = await timeoutFetch("https://api.apify.com/v2/acts/apify~instagram-post-scraper/run-sync-get-dataset-items?token=" + token + "&timeout=20", {
+    var res = await timeoutFetch("https://api.apify.com/v2/acts/apify~instagram-post-scraper/run-sync-get-dataset-items?token=" + token + "&timeout=12", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username: [username], resultsLimit: 100 })
-    }, 25000);
+      body: JSON.stringify({ username: [username], resultsLimit: 30 })
+    }, 15000);
     if (!res.ok) {
       return await scrapeInstagramFallback(token, username, platformLabel, episodes);
     }
@@ -289,10 +289,10 @@ async function scrapeInstagramFallback(token, username, platformLabel, episodes)
 async function scrapeTikTok(token, username, platformKey, episodes) {
   if (!token) return { posts: [], followers: 0 };
   try {
-    var res = await timeoutFetch("https://api.apify.com/v2/acts/apidojo~tiktok-scraper-api/run-sync-get-dataset-items?token=" + token + "&timeout=20", {
+    var res = await timeoutFetch("https://api.apify.com/v2/acts/apidojo~tiktok-scraper-api/run-sync-get-dataset-items?token=" + token + "&timeout=15", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ profiles: ["https://www.tiktok.com/@" + username], maxProfileVideos: 10 })
-    }, 25000);
+    }, 18000);
     if (res.ok) {
       var items = await res.json();
       if (Array.isArray(items) && items.length > 0) {
@@ -322,10 +322,10 @@ async function scrapeTikTok(token, username, platformKey, episodes) {
   } catch (e) {}
 
   try {
-    var res2 = await timeoutFetch("https://api.apify.com/v2/acts/clockworks~tiktok-scraper/run-sync-get-dataset-items?token=" + token + "&timeout=15", {
+    var res2 = await timeoutFetch("https://api.apify.com/v2/acts/clockworks~tiktok-scraper/run-sync-get-dataset-items?token=" + token + "&timeout=12", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ profiles: ["https://www.tiktok.com/@" + username], resultsPerPage: 10, shouldDownloadVideos: false })
-    }, 20000);
+    }, 15000);
     if (!res2.ok) return { posts: [], followers: 0 };
     var items2 = await res2.json();
     if (!Array.isArray(items2)) return { posts: [], followers: 0 };

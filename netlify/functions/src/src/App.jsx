@@ -87,10 +87,29 @@ async function analyzeSentiment(comments) {
 // ─── Scraper via Netlify Function ───
 async function scrapeAccounts() {
   try {
-    const r = await fetch("/.netlify/functions/scrape", { method: "POST" });
-    const d = await r.json();
-    if (d.error) { console.error("Scrape error:", d.error); return null; }
-    return d;
+    // Get current timestamp to detect when new data arrives
+    var currentData = null;
+    try {
+      var cr = await fetch("/.netlify/functions/scrape");
+      currentData = await cr.json();
+    } catch(e) {}
+    var oldTimestamp = currentData ? currentData.lastUpdated : null;
+
+    // Trigger background scrape
+    await fetch("/.netlify/functions/scrape-background", { method: "POST" }).catch(function(){});
+
+    // Poll every 5 seconds for up to 5 minutes
+    for (var attempt = 0; attempt < 60; attempt++) {
+      await new Promise(function(r) { setTimeout(r, 5000); });
+      try {
+        var fr = await fetch("/.netlify/functions/scrape");
+        var fresh = await fr.json();
+        if (fresh.lastUpdated && fresh.lastUpdated !== oldTimestamp) {
+          return fresh;
+        }
+      } catch(e) {}
+    }
+    return null;
   } catch (e) { console.error("Scrape error:", e); return null; }
 }
 

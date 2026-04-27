@@ -161,6 +161,8 @@ async function scrapeYouTube(ytKey) {
       if (minutes >= 20) {
         episodeNum++;
         var guestName = extractGuestNames(sorted[v].snippet.title) || ("Episode " + episodeNum);
+         var titleLower = sorted[v].snippet.title.toLowerCase();
+        if (titleLower.includes("lewis") && titleLower.includes("sister")) guestName = "The Lewis Sisters";
         var words = sorted[v].snippet.title.toLowerCase().replace(/[^a-z0-9\s]/g, "").split(/\s+/).filter(function(w) { return w.length > 3 && !SKIP_WORDS.includes(w); });
         episodes.push({ name: guestName, num: episodeNum, keywords: words, title: sorted[v].snippet.title, date: toEST(sorted[v].snippet.publishedAt) });
       }

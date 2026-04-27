@@ -246,8 +246,24 @@ function DashboardTab({ posts, comments, accountFollowers, followerHistory, epis
   ];
 
   var episodeDates = (episodes || []).filter(function(ep) { return ep.date; });
+
+  // Find earliest post date for each episode (first promo/announcement)
+  var earliestPostDate = {};
+  episodeDates.forEach(function(ep) {
+    var epPosts = posts.filter(function(p) { return p.episode === ep.name; }).sort(function(a, b) { return new Date(a.date) - new Date(b.date); });
+    if (epPosts.length > 0) {
+      earliestPostDate[ep.name] = epPosts[0].date;
+    } else {
+      earliestPostDate[ep.name] = ep.date;
+    }
+  });
+
+  // Build map from earliest date to episode name
   var epDateMap = {};
-  episodeDates.forEach(function(ep) { epDateMap[ep.date] = ep.name; });
+  episodeDates.forEach(function(ep) {
+    var d = earliestPostDate[ep.name] || ep.date;
+    epDateMap[d] = ep.name;
+  });
 
   var chartData = history.map(function(h) {
     var dateStr = new Date(h.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
@@ -255,7 +271,7 @@ function DashboardTab({ posts, comments, accountFollowers, followerHistory, epis
     return {
       date: h.date,
       label: dateStr,
-      epLabel: epName ? epName + " Drop" : "",
+      epLabel: epName || "",
       "YT @twobecontinuedhq": h.youtube || 0,
       "IG @twobecontinuedhq": h.instagram || 0,
       "TT @twobecontinuedhq": h.tiktok || 0,
@@ -264,12 +280,13 @@ function DashboardTab({ posts, comments, accountFollowers, followerHistory, epis
     };
   }).sort(function(a, b) { return new Date(a.date) - new Date(b.date); });
 
-  // Insert episode dates if not in history
+  // Insert episode earliest dates if not in history
   episodeDates.forEach(function(ep) {
-    var exists = chartData.some(function(d) { return d.date === ep.date; });
+    var useDate = earliestPostDate[ep.name] || ep.date;
+    var exists = chartData.some(function(d) { return d.date === useDate; });
     if (!exists) {
-      var dateStr = new Date(ep.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
-      chartData.push({ date: ep.date, label: dateStr, epLabel: ep.name + " Drop" });
+      var dateStr = new Date(useDate + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
+      chartData.push({ date: useDate, label: dateStr, epLabel: ep.name });
       chartData.sort(function(a, b) { return new Date(a.date) - new Date(b.date); });
     }
   });

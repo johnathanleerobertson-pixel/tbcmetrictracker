@@ -298,15 +298,23 @@ function DashboardTab({ posts, comments, accountFollowers, followerHistory, epis
     }
   });
 
-  // Custom x-axis tick — mobile shows just dates, desktop shows episode pills too
+  // Track which months have been shown on mobile
+  var shownMonths = {};
+
+  // Custom x-axis tick — mobile shows month once, desktop shows dates + episode pills
   function CustomXTick(props) {
     var x = props.x, y = props.y, payload = props.payload;
     var item = chartData.find(function(d) { return d.label === payload.value; });
     var epLabel = item ? item.epLabel : "";
     if (isMobile) {
+      var month = payload.value.replace(/\s\d+$/, "");
+      if (shownMonths[month]) {
+        return <g />;
+      }
+      shownMonths[month] = true;
       return (
         <g transform={"translate(" + x + "," + y + ")"}>
-          <text x={0} y={0} dy={14} textAnchor="middle" fill={BRAND.gray} fontSize={8}>{payload.value}</text>
+          <text x={0} y={0} dy={14} textAnchor="middle" fill={BRAND.gray} fontSize={9} fontWeight="600">{month}</text>
         </g>
       );
     }

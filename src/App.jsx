@@ -234,6 +234,13 @@ function SentimentBadge({ sentiment }) {
 }
 
 function DashboardTab({ posts, comments, accountFollowers, followerHistory, episodes }) {
+  var [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  useEffect(function() {
+    function handleResize() { setIsMobile(window.innerWidth < 768); }
+    window.addEventListener("resize", handleResize);
+    return function() { window.removeEventListener("resize", handleResize); };
+  }, []);
+
   var af = accountFollowers || {};
   var history = followerHistory || [];
 
@@ -291,11 +298,18 @@ function DashboardTab({ posts, comments, accountFollowers, followerHistory, epis
     }
   });
 
-  // Custom x-axis tick that shows date + episode label below
+  // Custom x-axis tick — mobile shows just dates, desktop shows episode pills too
   function CustomXTick(props) {
     var x = props.x, y = props.y, payload = props.payload;
     var item = chartData.find(function(d) { return d.label === payload.value; });
     var epLabel = item ? item.epLabel : "";
+    if (isMobile) {
+      return (
+        <g transform={"translate(" + x + "," + y + ")"}>
+          <text x={0} y={0} dy={14} textAnchor="middle" fill={BRAND.gray} fontSize={8}>{payload.value}</text>
+        </g>
+      );
+    }
     return (
       <g transform={"translate(" + x + "," + y + ")"}>
         <text x={0} y={0} dy={14} textAnchor="middle" fill={BRAND.gray} fontSize={10}>{payload.value}</text>
@@ -385,23 +399,77 @@ function DashboardTab({ posts, comments, accountFollowers, followerHistory, epis
           Tracked over time · episode drops marked on timeline
         </p>
         {chartData.length >= 1 ? (
-          <ResponsiveContainer width="100%" height={380}>
-            <LineChart data={chartData} margin={{ top: 10, right: 20, left: 0, bottom: 45 }}>
+          <ResponsiveContainer width="100%" height={isMobile ? 280 : 380}>
+            <LineChart data={chartData} margin={isMobile ? { top: 5, right: 10, left: -15, bottom: 10 } : { top: 10, right: 20, left: 0, bottom: 45 }}>
               <CartesianGrid strokeDasharray="3 3" stroke={BRAND.border} />
-              <XAxis dataKey="label" tick={<CustomXTick />} axisLine={{ stroke: BRAND.border }} interval={0} height={55} />
-              <YAxis tick={{ fill: BRAND.gray, fontSize: 10 }} axisLine={{ stroke: BRAND.border }} />
+              <XAxis dataKey="label" tick={<CustomXTick />} axisLine={{ stroke: BRAND.border }} interval={0} height={isMobile ? 30 : 55} />
+              <YAxis tick={{ fill: BRAND.gray, fontSize: isMobile ? 8 : 10 }} axisLine={{ stroke: BRAND.border }} width={isMobile ? 30 : 40} />
               <Tooltip contentStyle={ttStyle} />
-              <Legend wrapperStyle={{ fontSize: 10, paddingTop: 8 }} />
-              <Line type="monotone" dataKey="YT @twobecontinuedhq" stroke="#FF0000" strokeWidth={2} dot={{ r: 3 }} connectNulls />
-              <Line type="monotone" dataKey="IG @twobecontinuedhq" stroke="#E1306C" strokeWidth={2} dot={{ r: 3 }} connectNulls />
-              <Line type="monotone" dataKey="TT @twobecontinuedhq" stroke="#010101" strokeWidth={2} dot={{ r: 3 }} connectNulls />
-              <Line type="monotone" dataKey="IG @itsdelaneyandhadley" stroke="#C13584" strokeWidth={2} dot={{ r: 3 }} connectNulls />
-              <Line type="monotone" dataKey="TT @itsdelaneyandhadley" stroke="#555555" strokeWidth={2} dot={{ r: 3 }} connectNulls />
+              {!isMobile && <Legend wrapperStyle={{ fontSize: 10, paddingTop: 8 }} />}
+            {isMobile ? (
+              <>
+                <Line type="monotone" dataKey="YT @twobecontinuedhq" name="YT" stroke="#FF0000" strokeWidth={2} dot={{ r: 2 }} connectNulls />
+                <Line type="monotone" dataKey="IG @twobecontinuedhq" name="IG" stroke="#E1306C" strokeWidth={2} dot={{ r: 2 }} connectNulls />
+                <Line type="monotone" dataKey="TT @twobecontinuedhq" name="TT" stroke="#010101" strokeWidth={2} dot={{ r: 2 }} connectNulls />
+                <Line type="monotone" dataKey="IG @itsdelaneyandhadley" name="IG Hosts" stroke="#C13584" strokeWidth={2} dot={{ r: 2 }} connectNulls />
+                <Line type="monotone" dataKey="TT @itsdelaneyandhadley" name="TT Hosts" stroke="#555555" strokeWidth={2} dot={{ r: 2 }} connectNulls />
+              </>
+            ) : (
+              <>
+                <Line type="monotone" dataKey="YT @twobecontinuedhq" stroke="#FF0000" strokeWidth={2} dot={{ r: 3 }} connectNulls />
+                <Line type="monotone" dataKey="IG @twobecontinuedhq" stroke="#E1306C" strokeWidth={2} dot={{ r: 3 }} connectNulls />
+                <Line type="monotone" dataKey="TT @twobecontinuedhq" stroke="#010101" strokeWidth={2} dot={{ r: 3 }} connectNulls />
+                <Line type="monotone" dataKey="IG @itsdelaneyandhadley" stroke="#C13584" strokeWidth={2} dot={{ r: 3 }} connectNulls />
+                <Line type="monotone" dataKey="TT @itsdelaneyandhadley" stroke="#555555" strokeWidth={2} dot={{ r: 3 }} connectNulls />
+              </>
+            )}
             </LineChart>
           </ResponsiveContainer>
         ) : (
           <div style={{ textAlign: "center", padding: 40, color: BRAND.gray }}>
             <p style={{ fontSize: 13 }}>Scrape to start tracking growth.</p>
+          </div>
+        )}
+
+        {/* Mobile legend + episode markers */}
+        {isMobile && (
+          <div style={{ marginTop: 12 }}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center", marginBottom: 10 }}>
+              {[
+                { name: "YT", color: "#FF0000" },
+                { name: "IG @tbc", color: "#E1306C" },
+                { name: "TT @tbc", color: "#010101" },
+                { name: "IG @hosts", color: "#C13584" },
+                { name: "TT @hosts", color: "#555" }
+              ].map(function(l) {
+                return (
+                  <div key={l.name} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                    <div style={{ width: 10, height: 3, background: l.color, borderRadius: 2 }}></div>
+                    <span style={{ fontSize: 9, color: BRAND.gray }}>{l.name}</span>
+                  </div>
+                );
+              })}
+            </div>
+            {episodeDates.length > 0 && (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, justifyContent: "center" }}>
+                {episodeDates.map(function(ep) {
+                  var useDate = earliestPostDate[ep.name] || ep.date;
+                  var dateStr = new Date(useDate + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
+                  return (
+                    <div key={ep.name} style={{
+                      display: "inline-flex", alignItems: "center", gap: 4,
+                      fontSize: 9, color: BRAND.purple, fontWeight: 600,
+                      background: BRAND.purple + "12",
+                      padding: "3px 8px", borderRadius: 12,
+                      border: "1px solid " + BRAND.purple + "30"
+                    }}>
+                      <span>📌 {ep.name}</span>
+                      <span style={{ color: BRAND.gray, fontWeight: 400 }}>{dateStr}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
       </div>

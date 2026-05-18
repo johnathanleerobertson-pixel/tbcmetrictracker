@@ -265,11 +265,12 @@ function DashboardTab({ posts, comments, accountFollowers, followerHistory, epis
     }
   });
 
-  // Build map from earliest date to episode name
+  // Build map from both earliest post date AND episode date to name
   var epDateMap = {};
   episodeDates.forEach(function(ep) {
     var d = earliestPostDate[ep.name] || ep.date;
     epDateMap[d] = ep.name;
+    if (ep.date !== d) epDateMap[ep.date] = ep.name;
   });
 
   var chartData = history.map(function(h) {
@@ -287,30 +288,33 @@ function DashboardTab({ posts, comments, accountFollowers, followerHistory, epis
     };
   }).sort(function(a, b) { return new Date(a.date) - new Date(b.date); });
 
-  // Insert episode earliest dates if not in history
+  // Insert episode dates and ensure all get labels
   episodeDates.forEach(function(ep) {
     var useDate = earliestPostDate[ep.name] || ep.date;
-    var exists = chartData.some(function(d) { return d.date === useDate; });
-    if (!exists) {
-      var dateStr = new Date(useDate + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
-      chartData.push({ date: useDate, label: dateStr, epLabel: ep.name });
-      chartData.sort(function(a, b) { return new Date(a.date) - new Date(b.date); });
+    var alreadyLabeled = chartData.some(function(d) { return d.epLabel === ep.name; });
+    if (!alreadyLabeled) {
+      var existingPoint = chartData.find(function(d) { return d.date === useDate || d.date === ep.date; });
+      if (existingPoint) {
+        existingPoint.epLabel = ep.name;
+      } else {
+        var dateStr = new Date(useDate + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
+        chartData.push({ date: useDate, label: dateStr, epLabel: ep.name });
+        chartData.sort(function(a, b) { return new Date(a.date) - new Date(b.date); });
+      }
     }
   });
 
-  // Track which months have been shown on mobile
+  // Mobile: show each month name once, no overlap
   var shownMonths = {};
 
-  // Custom x-axis tick — mobile shows month once, desktop shows dates + episode pills
+  // Custom x-axis tick
   function CustomXTick(props) {
     var x = props.x, y = props.y, payload = props.payload;
     var item = chartData.find(function(d) { return d.label === payload.value; });
     var epLabel = item ? item.epLabel : "";
     if (isMobile) {
       var month = payload.value.replace(/\s\d+$/, "");
-      if (shownMonths[month]) {
-        return <g />;
-      }
+      if (shownMonths[month]) return <g />;
       shownMonths[month] = true;
       return (
         <g transform={"translate(" + x + "," + y + ")"}>

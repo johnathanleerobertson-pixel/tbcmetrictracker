@@ -254,15 +254,15 @@ function DashboardTab({ posts, comments, accountFollowers, followerHistory, epis
 
   var episodeDates = (episodes || []).filter(function(ep) { return ep.date; });
 
-  // Find earliest post date for each episode (first promo/announcement)
+  // Place episode label 2 days before YouTube publish date (typical promo timing)
   var earliestPostDate = {};
   episodeDates.forEach(function(ep) {
-    var epPosts = posts.filter(function(p) { return p.episode === ep.name; }).sort(function(a, b) { return new Date(a.date) - new Date(b.date); });
-    if (epPosts.length > 0) {
-      earliestPostDate[ep.name] = epPosts[0].date;
-    } else {
-      earliestPostDate[ep.name] = ep.date;
-    }
+    var epDate = new Date(ep.date + "T12:00:00");
+    var promoDate = new Date(epDate.getTime() - 2 * 24 * 60 * 60 * 1000);
+    var yyyy = promoDate.getFullYear();
+    var mm = String(promoDate.getMonth() + 1).padStart(2, "0");
+    var dd = String(promoDate.getDate()).padStart(2, "0");
+    earliestPostDate[ep.name] = yyyy + "-" + mm + "-" + dd;
   });
 
   // Build map from both earliest post date AND episode date to name

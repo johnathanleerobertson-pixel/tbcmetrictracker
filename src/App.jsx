@@ -304,6 +304,41 @@ function DashboardTab({ posts, comments, accountFollowers, followerHistory, epis
     }
   });
 
+  // Interpolate missing follower values so lines plot through all points
+  var keys = ["YT @twobecontinuedhq", "IG @twobecontinuedhq", "TT @twobecontinuedhq", "IG @itsdelaneyandhadley", "TT @itsdelaneyandhadley"];
+  for (var ci = 0; ci < chartData.length; ci++) {
+    var point = chartData[ci];
+    var needsInterp = keys.some(function(k) { return point[k] === undefined || point[k] === null; });
+    if (needsInterp) {
+      // Find previous and next points with data
+      var prev = null;
+      for (var pi = ci - 1; pi >= 0; pi--) {
+        if (chartData[pi]["YT @twobecontinuedhq"] !== undefined) { prev = chartData[pi]; break; }
+      }
+      var next = null;
+      for (var ni = ci + 1; ni < chartData.length; ni++) {
+        if (chartData[ni]["YT @twobecontinuedhq"] !== undefined) { next = chartData[ni]; break; }
+      }
+      keys.forEach(function(k) {
+        if (point[k] === undefined || point[k] === null) {
+          if (prev && next) {
+            var pTime = new Date(prev.date).getTime();
+            var nTime = new Date(next.date).getTime();
+            var cTime = new Date(point.date).getTime();
+            var ratio = (nTime > pTime) ? (cTime - pTime) / (nTime - pTime) : 0;
+            point[k] = Math.round((prev[k] || 0) + ratio * ((next[k] || 0) - (prev[k] || 0)));
+          } else if (prev) {
+            point[k] = prev[k] || 0;
+          } else if (next) {
+            point[k] = next[k] || 0;
+          } else {
+            point[k] = 0;
+          }
+        }
+      });
+    }
+  }
+
   // Mobile: show each month name once, no overlap
   var shownMonths = {};
 

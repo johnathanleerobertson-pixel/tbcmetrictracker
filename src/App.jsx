@@ -133,6 +133,7 @@ function Header({ activeTab, setActiveTab, lastUpdated, onScrape, scraping }) {
     { id: "posts", label: "Posts", icon: "▤" },
     { id: "comments", label: "Comment Sentiment", icon: "💬" },
     { id: "trends", label: "Trends", icon: "📈" },
+    { id: "projection", label: "Projection", icon: "🎯" },
 
   ];
   return (
@@ -833,6 +834,186 @@ const btnS = {
 const tdS = { padding: "10px 12px", fontSize: 12, color: BRAND.gray, borderBottom: `1px solid ${BRAND.lightGray}` };
 
 // ─── Main ───
+function ProjectionTab({ accountFollowers, followerHistory }) {
+  var af = accountFollowers || {};
+  var history = (followerHistory || []).slice().sort(function(a, b) { return a.date.localeCompare(b.date); });
+
+  var ACCOUNTS = [
+    { key: "youtube", label: "YouTube Subscribers", handle: "@twobecontinuedhq", color: "#FF0000", icon: "▶" },
+    { key: "instagram", label: "IG Followers", handle: "@twobecontinuedhq", color: "#E1306C", icon: "📷" },
+    { key: "tiktok", label: "TikTok Followers", handle: "@twobecontinuedhq", color: "#010101", icon: "♪" },
+    { key: "instagram_hosts", label: "IG Followers", handle: "@itsdelaneyandhadley", color: "#C13584", icon: "📷" },
+    { key: "tiktok_hosts", label: "TikTok Followers", handle: "@itsdelaneyandhadley", color: "#555", icon: "♪" }
+  ];
+
+  var defaultTargets = {};
+  ACCOUNTS.forEach(function(a) { defaultTargets[a.key] = { t1: 5000, t2: 10000 }; });
+  var [targets, setTargets] = useState(defaultTargets);
+
+  function updateTarget(key, which, val) {
+    var num = parseInt(val, 10);
+    if (isNaN(num) || num < 0) return;
+    var copy = JSON.parse(JSON.stringify(targets));
+    copy[key][which] = num;
+    setTargets(copy);
+  }
+
+  // Calculate growth rate since May 30th (or closest available date)
+  function getGrowthData(acctKey) {
+    var current = af[acctKey] || 0;
+    var baselineDate = "2026-05-30";
+    var baselineValue = 0;
+
+    // Find closest entry on or after May 30
+    var afterEntries = history.filter(function(h) { return h.date >= baselineDate && h[acctKey] > 0; });
+    var beforeEntries = history.filter(function(h) { return h.date <= baselineDate && h[acctKey] > 0; });
+
+    var refDate, refValue;
+    if (afterEntries.length > 0) {
+      refDate = afterEntries[0].date;
+      refValue = afterEntries[0][acctKey];
+    } else if (beforeEntries.length > 0) {
+      refDate = beforeEntries[beforeEntries.length - 1].date;
+      refValue = beforeEntries[beforeEntries.length - 1][acctKey];
+    } else {
+      return { current: current, dailyGrowth: 0, refDate: null, refValue: 0, daysSince: 0 };
+    }
+
+    var daysSince = Math.max(1, Math.round((new Date() - new Date(refDate + "T12:00:00")) / (24 * 60 * 60 * 1000)));
+    var totalGrowth = current - refValue;
+    var dailyGrowth = totalGrowth / daysSince;
+
+    return { current: current, dailyGrowth: dailyGrowth, refDate: refDate, refValue: refValue, daysSince: daysSince };
+  }
+
+  function projectDate(current, dailyGrowth, target) {
+    if (current >= target) return { date: "Reached!", days: 0, reached: true };
+    if (dailyGrowth <= 0) return { date: "Not projected", days: null, reached: false };
+    var daysNeeded = Math.ceil((target - current) / dailyGrowth);
+    var projected = new Date();
+    projected.setDate(projected.getDate() + daysNeeded);
+    var dateStr = projected.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+    return { date: dateStr, days: daysNeeded, reached: false };
+  }
+
+  return (
+    <div style={{ padding: "clamp(12px, 3vw, 24px)" }}>
+      <h3 style={{ margin: "0 0 4px", fontSize: 16, color: BRAND.dark, fontFamily: "'Poppins', sans-serif" }}>
+        Growth Projections
+      </h3>
+      <p style={{ margin: "0 0 20px", fontSize: 11, color: BRAND.gray }}>
+        Based on average daily growth since May 30, 2026. Edit targets below.
+      </p>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        {ACCOUNTS.map(function(acct) {
+          var growth = getGrowthData(acct.key);
+          var t1 = targets[acct.key].t1;
+          var t2 = targets[acct.key].t2;
+          var proj1 = projectDate(growth.current, growth.dailyGrowth, t1);
+          var proj2 = projectDate(growth.current, growth.dailyGrowth, t2);
+
+          var maxTarget = Math.max(t1, t2);
+          var progressPct = maxTarget > 0 ? Math.min(100, (growth.current / maxTarget) * 100) : 0;
+          var t1Pct = maxTarget > 0 ? (t1 / maxTarget) * 100 : 0;
+
+          return (
+            <div key={acct.key} style={{
+              background: BRAND.white, borderRadius: 12, padding: "20px",
+              border: "1px solid " + BRAND.border, boxShadow: "0 1px 4px rgba(0,0,0,.04)"
+            }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                <div>
+                  <span style={{ fontSize: 18, marginRight: 8 }}>{acct.icon}</span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: BRAND.dark, fontFamily: "'Poppins', sans-serif" }}>{acct.label}</span>
+                  <span style={{ fontSize: 11, color: acct.color, marginLeft: 6, fontWeight: 500 }}>{acct.handle}</span>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <p style={{ margin: 0, fontSize: 22, fontWeight: 800, color: acct.color, fontFamily: "'Poppins', sans-serif" }}>
+                    {growth.current.toLocaleString()}
+                  </p>
+                  <p style={{ margin: 0, fontSize: 10, color: growth.dailyGrowth >= 0 ? "#22C55E" : "#EF4444", fontWeight: 600 }}>
+                    {growth.dailyGrowth >= 0 ? "+" : ""}{growth.dailyGrowth.toFixed(1)}/day
+                  </p>
+                </div>
+              </div>
+
+              {/* Progress bar */}
+              <div style={{ position: "relative", height: 24, background: BRAND.cream, borderRadius: 12, overflow: "hidden", marginBottom: 12, border: "1px solid " + BRAND.border }}>
+                <div style={{
+                  height: "100%", width: progressPct + "%",
+                  background: "linear-gradient(90deg, " + acct.color + "40, " + acct.color + ")",
+                  borderRadius: 12, transition: "width 0.5s"
+                }} />
+                {/* Target 1 marker */}
+                <div style={{
+                  position: "absolute", top: 0, bottom: 0, left: t1Pct + "%",
+                  borderLeft: "2px dashed " + BRAND.purple, opacity: 0.6
+                }} />
+                {t1Pct < 95 && <span style={{
+                  position: "absolute", top: 2, left: t1Pct + "%", marginLeft: 4,
+                  fontSize: 8, color: BRAND.purple, fontWeight: 700
+                }}>{(t1/1000).toFixed(0)}K</span>}
+                {/* Target 2 marker at end */}
+                <span style={{
+                  position: "absolute", top: 2, right: 6,
+                  fontSize: 8, color: BRAND.gray, fontWeight: 700
+                }}>{(t2/1000).toFixed(0)}K</span>
+              </div>
+
+              {/* Projections */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                {[
+                  { label: "Target 1", target: t1, proj: proj1, which: "t1" },
+                  { label: "Target 2", target: t2, proj: proj2, which: "t2" }
+                ].map(function(item) {
+                  return (
+                    <div key={item.which} style={{
+                      background: item.proj.reached ? "#F0FFF4" : BRAND.cream,
+                      borderRadius: 10, padding: "12px",
+                      border: "1px solid " + (item.proj.reached ? "#BBF7D0" : BRAND.border)
+                    }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                        <span style={{ fontSize: 10, color: BRAND.gray, fontWeight: 600 }}>{item.label}:</span>
+                        <input type="number" value={item.target}
+                          onChange={function(e) { updateTarget(acct.key, item.which, e.target.value); }}
+                          style={{
+                            width: 70, padding: "3px 6px", fontSize: 12, fontWeight: 700,
+                            border: "1px solid " + BRAND.border, borderRadius: 6,
+                            color: BRAND.dark, background: BRAND.white, fontFamily: "'Poppins', sans-serif"
+                          }}
+                        />
+                      </div>
+                      {item.proj.reached ? (
+                        <div>
+                          <p style={{ margin: 0, fontSize: 14, fontWeight: 800, color: "#22C55E" }}>✅ Reached!</p>
+                        </div>
+                      ) : item.proj.days !== null ? (
+                        <div>
+                          <p style={{ margin: "0 0 2px", fontSize: 13, fontWeight: 700, color: BRAND.dark }}>{item.proj.date}</p>
+                          <p style={{ margin: 0, fontSize: 10, color: BRAND.gray }}>{item.proj.days.toLocaleString()} days from now</p>
+                        </div>
+                      ) : (
+                        <p style={{ margin: 0, fontSize: 11, color: BRAND.gray }}>Growth rate too low to project</p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {growth.refDate && (
+                <p style={{ margin: "10px 0 0", fontSize: 9, color: BRAND.gray, textAlign: "right" }}>
+                  Growth calculated from {growth.refValue.toLocaleString()} on {new Date(growth.refDate + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })} ({growth.daysSince} days ago)
+                </p>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [tab, setTab] = useState("dashboard");
   const [data, setData] = useState(null);
@@ -898,6 +1079,7 @@ export default function App() {
       {tab === "posts" && <PostsTab posts={data.posts} filterPlatform={fp} setFilterPlatform={setFp} filterEpisode={fe} setFilterEpisode={setFe} episodes={episodes} />}
       {tab === "comments" && <CommentsTab comments={data.comments} posts={data.posts} />}
       {tab === "trends" && <TrendsTab posts={data.posts} />}
+      {tab === "projection" && <ProjectionTab accountFollowers={data.accountFollowers} followerHistory={data.followerHistory} />}
       
       <footer style={{ textAlign: "center", padding: "20px", borderTop: `1px solid ${BRAND.border}`, fontSize: 10, color: BRAND.gray, background: BRAND.white }}>
         © 2026 Two Be Continued... · Metric Tracker · Hosted by Delaney & Hadley Robertson · twobecontinuedhq.com

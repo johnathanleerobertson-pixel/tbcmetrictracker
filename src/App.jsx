@@ -408,7 +408,8 @@ function DashboardTab({ posts, comments, accountFollowers, followerHistory, epis
       {/* YouTube Views */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 10, marginBottom: 24 }}>
         {[
-          { platform: "youtube", label: "Total YouTube Views", handle: "@twobecontinuedhq", color: "#FF0000", icon: "▶" }
+          { platform: "youtube", label: "Total YouTube Views", handle: "@twobecontinuedhq", color: "#FF0000", icon: "▶" },
+          { platform: "instagram", label: "Total IG Views", handle: "@twobecontinuedhq", color: "#E1306C", icon: "📷" }
         ].map(function(v) {
           var totalViews = posts.filter(function(p) { return p.platform === v.platform; }).reduce(function(sum, p) { return sum + (p.views || 0); }, 0);
           var totalLikes = posts.filter(function(p) { return p.platform === v.platform; }).reduce(function(sum, p) { return sum + (p.likes || 0); }, 0);

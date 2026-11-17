@@ -405,11 +405,10 @@ function DashboardTab({ posts, comments, accountFollowers, followerHistory, epis
         })}
       </div>
 
-      {/* Instagram Views */}
+      {/* YouTube Views */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 10, marginBottom: 24 }}>
         {[
-          { platform: "instagram", label: "Total IG Views", handle: "@twobecontinuedhq", color: "#E1306C", icon: "👁" },
-          { platform: "instagram_hosts", label: "Total IG Views", handle: "@itsdelaneyandhadley", color: "#C13584", icon: "👁" }
+          { platform: "youtube", label: "Total YouTube Views", handle: "@twobecontinuedhq", color: "#FF0000", icon: "▶" }
         ].map(function(v) {
           var totalViews = posts.filter(function(p) { return p.platform === v.platform; }).reduce(function(sum, p) { return sum + (p.views || 0); }, 0);
           var totalLikes = posts.filter(function(p) { return p.platform === v.platform; }).reduce(function(sum, p) { return sum + (p.likes || 0); }, 0);
